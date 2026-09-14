@@ -1,0 +1,62 @@
+name: Build fixtures
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wclap:
+    runs-on: ubuntu-latest
+    env:
+      WASI_SDK_VERSION: "33"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install WASI SDK
+        run: |
+          curl -fL -o wasi-sdk.tar.gz \
+            "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+          tar -xzf wasi-sdk.tar.gz
+          echo "WASI_SDK_PATH=$PWD/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" >> "$GITHUB_ENV"
+      - name: Build WCLAP fixtures
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$WASI_SDK_PATH/share/cmake/wasi-sdk.cmake"
+          cmake --build build --parallel
+      - name: Record checksums
+        working-directory: build/artifacts
+        run: sha256sum *.wclap.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wclap-test-plugins
+          path: |
+            build/artifacts/*.wclap.tar.gz
+            build/artifacts/SHA256SUMS
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/artifacts/*.wclap.tar.gz \
+            build/artifacts/SHA256SUMS \
+            --generate-notes
+
+  native-clap:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build native CLAP fixtures
+        run: |
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-native --parallel
