@@ -10,15 +10,17 @@ A stereo pass-through with an embedded WebView. Its `clap.gui` implementation en
 
 ## Download
 
-Tagged releases provide ready-to-load WCLAP archives and SHA-256 checksums:
+Tagged releases provide downloadable WCLAP archives and SHA-256 checksums:
 
 https://github.com/charCulbert/wclap-test-plugins/releases
 
-The latest lifecycle fixture has the stable download URL:
+For browser hosts, GitHub Pages serves the latest `main` build with CORS enabled:
 
 ```text
-https://github.com/charCulbert/wclap-test-plugins/releases/latest/download/gui-lifecycle.wclap.tar.gz
+https://charculbert.github.io/wclap-test-plugins/gui-lifecycle.wclap.tar.gz
 ```
+
+Release downloads are immutable build records, while the Pages URL is intended for convenient live testing.
 
 ## Build WCLAP
 
