@@ -30,6 +30,8 @@ function(add_test_plugin)
     set_property(GLOBAL APPEND PROPERTY TEST_PLUGIN_NAMES "${name}")
 
     add_library(${name}-impl STATIC "${dir}/Plugin.cpp")
+    # Linked into a shared .clap on native platforms.
+    set_target_properties(${name}-impl PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(${name}-impl PUBLIC "${dir}")
     target_link_libraries(${name}-impl PUBLIC clap clap-helpers)
     target_compile_definitions(${name}-impl PUBLIC

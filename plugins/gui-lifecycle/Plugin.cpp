@@ -23,7 +23,8 @@ std::string resourceRoot;
 
 const char* mediaTypeFor(const std::string& path)
 {
-    const auto extension = path.substr(path.find_last_of('.') + 1);
+    const auto dot = path.find_last_of('.');
+    const auto extension = dot == std::string::npos ? std::string() : path.substr(dot + 1);
     if (extension == "css") return "text/css";
     if (extension == "js") return "text/javascript";
     if (extension == "txt") return "text/plain";
@@ -196,10 +197,10 @@ private:
     const clap_host_webview_t* hostWebview = nullptr;
     static constexpr uint32_t width = 400;
     static constexpr uint32_t height = 260;
-    mutable bool created = false;
-    mutable bool sized = false;
-    mutable bool parented = false;
-    mutable bool visible = false;
+    bool created = false;
+    bool sized = false;
+    bool parented = false;
+    bool visible = false;
 };
 
 uint32_t pluginCount(const clap_plugin_factory_t*) { return 1; }
