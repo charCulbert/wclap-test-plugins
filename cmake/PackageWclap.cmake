@@ -34,7 +34,8 @@ file(COPY "${THIRD_PARTY_LICENSES}/" DESTINATION "${STAGING}/THIRD_PARTY_LICENSE
 get_filename_component(output_dir "${OUTPUT}" DIRECTORY)
 file(MAKE_DIRECTORY "${output_dir}")
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${OUTPUT}"
+    COMMAND "${CMAKE_COMMAND}" -E env SOURCE_DATE_EPOCH=0
+        "${CMAKE_COMMAND}" "-DOUTPUT=${OUTPUT}"
         -P "${CMAKE_CURRENT_LIST_DIR}/ArchiveDirectory.cmake"
     WORKING_DIRECTORY "${STAGING}"
     COMMAND_ERROR_IS_FATAL ANY)
