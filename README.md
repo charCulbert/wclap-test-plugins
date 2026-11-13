@@ -1,55 +1,60 @@
 # WCLAP test plug-ins
 
-Small source-built CLAP/WCLAP fixtures for testing browser host behavior.
+Small CLAP plug-ins that each check one piece of host behaviour. Every plug-in builds from the same source as a WCLAP (CLAP compiled to WebAssembly) and as a native CLAP, so a host can be tested in the browser and natively against identical code.
 
-## Fixtures
+## Plug-ins
 
-### `gui-lifecycle`
+| Plug-in | Proves |
+| --- | --- |
+| [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface in CLAP order (`create`, `get_size`, `set_parent`, `show`) and serves the plug-in's multi-file resources to it. |
+| [`process-lifecycle`](plugins/process-lifecycle/README.md) | The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances `steady_time` across skipped blocks, and reports finite and infinite tails. |
 
-A stereo pass-through with an embedded WebView. Its `clap.gui` implementation enforces the embedded lifecycle order `create` → `get_size` → `set_parent` → `show`, and accepts its automatic ready-message round trip only while visible.
+Each plug-in's README says what a correct host does with it: load it, reject it, or contain it.
 
-### `process-lifecycle`
-
-A GUI-free utility with two mono outputs and one note input. It makes every CLAP process status, sleep wake path, `steady_time`, and finite/infinite tail behavior observable. See [`plugins/process-lifecycle/README.md`](plugins/process-lifecycle/README.md) for the MIDI protocol and exact browser-host checks.
+Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`.
 
 ## Download
 
-Tagged releases provide downloadable WCLAP archives and SHA-256 checksums:
+Tagged [releases](https://github.com/charCulbert/wclap-test-plugins/releases) carry, for each plug-in:
 
-https://github.com/charCulbert/wclap-test-plugins/releases
+- `<name>.wclap.tar.gz`: the WCLAP, with `module.wasm` and any resources at the archive root
+- `<name>-macos.clap.zip`, `<name>-linux-x64.clap.zip`, `<name>-windows-x64.clap.zip`: native builds
+- `manifest.json`: the git commit and tag, and per plug-in its ID, version, what it proves, and each file's platform, SHA-256 and size
+- `SHA256SUMS`
 
-For browser hosts, GitHub Pages serves the latest `main` build with CORS enabled:
+GitHub Pages serves the same set for the latest `main` build, with CORS enabled for browser hosts:
 
 ```text
+https://charculbert.github.io/wclap-test-plugins/
+https://charculbert.github.io/wclap-test-plugins/manifest.json
 https://charculbert.github.io/wclap-test-plugins/gui-lifecycle.wclap.tar.gz
-https://charculbert.github.io/wclap-test-plugins/process-lifecycle.wclap.tar.gz
 ```
 
-Release downloads are immutable build records, while the Pages URL is intended for convenient live testing.
+Releases are fixed records; the Pages URLs change with every push to `main`.
 
-## Build WCLAP
+## Build
 
-Requirements: CMake 3.24 or newer and [WASI SDK](https://github.com/WebAssembly/wasi-sdk). Version 33 is used in CI.
+Requirements: CMake 3.24 or newer and a C++17 compiler. Clone with submodules:
 
 ```sh
 git clone --recurse-submodules https://github.com/charCulbert/wclap-test-plugins.git
 cd wclap-test-plugins
+```
+
+### WCLAP
+
+Install [WASI SDK](https://github.com/WebAssembly/wasi-sdk) (CI uses version 33), then:
+
+```sh
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/wasi-sdk/share/cmake/wasi-sdk.cmake
 cmake --build build
 ```
 
-The root-layout archive is written to:
+Archives are written to `build/artifacts/<name>.wclap.tar.gz`. Their `module.wasm` is stripped of debug info; the unstripped module stays in `build/artifacts/<name>.wclap/`.
 
-```text
-build/artifacts/gui-lifecycle.wclap.tar.gz
-build/artifacts/process-lifecycle.wclap.tar.gz
-```
-
-## Build native CLAP
-
-Configure without a Wasm toolchain. The same `Plugin.cpp` and `Entry.cpp` are used:
+### Native CLAP
 
 ```sh
 cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
@@ -57,12 +62,20 @@ cmake --build build-native
 ctest --test-dir build-native --output-on-failure
 ```
 
-The native plug-in is written under `build-native/artifacts/`.
+Plug-ins are written to `build-native/artifacts/<name>.clap`.
 
-## Dependencies
+## Add a plug-in
 
-- [`free-audio/clap`](https://github.com/free-audio/clap)
-- [`free-audio/clap-helpers`](https://github.com/free-audio/clap-helpers)
-- [`free-audio/clap-wrapper`](https://github.com/free-audio/clap-wrapper)
+1. Create `plugins/<name>/` with:
+   - `Plugin.h`, `Plugin.cpp`: the plug-in, in namespace `wclap_test_plugins::<name>`. Use `TEST_PLUGIN_ID`, `TEST_PLUGIN_VERSION` and `TEST_PLUGIN_URL` in the descriptor; CMake defines them.
+   - `Entry.cpp`: the `clap_entry` export.
+   - `README.md`: a `## Proves` heading followed by one paragraph, then what a correct host does (load, reject or contain). The release manifest reads the Proves paragraph.
+   - `resources/` (optional): files bundled next to the module.
+   - `tests/*.cpp` (optional): each file becomes a native `ctest` test linked against the plug-in.
+2. Add a row to the table above.
 
-All dependencies are pinned Git submodules from their upstream repositories. The fixture source is MIT licensed, and release archives include applicable third-party licenses.
+The root `CMakeLists.txt` picks up every directory in `plugins/` that has a `Plugin.cpp` and builds it with `add_test_plugin()` from [`cmake/AddTestPlugin.cmake`](cmake/AddTestPlugin.cmake). Use the existing plug-ins as templates.
+
+## Licence
+
+The plug-ins are MIT licensed; see [LICENSE](LICENSE). They build on [`free-audio/clap`](https://github.com/free-audio/clap), [`free-audio/clap-helpers`](https://github.com/free-audio/clap-helpers) and [`free-audio/clap-wrapper`](https://github.com/free-audio/clap-wrapper), pinned as Git submodules. WCLAP archives include those licences and the ones for wasi-libc and libc++ (kept in [`licenses/`](licenses/)) under `THIRD_PARTY_LICENSES/`.
