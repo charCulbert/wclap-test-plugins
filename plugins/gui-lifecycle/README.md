@@ -20,4 +20,4 @@ Specifically, the host:
 4. Loads `webview.get_uri` (`/ui/index.html`) and resolves `style.css`, `main.js` and `message.txt` through `webview.get_resource`. The page itself waits for the stylesheet and `message.txt` before it sends its ready message.
 5. Delivers the page's message to `webview.receive` while the interface is visible, and the plug-in's reply back to the page. Messages are rejected before `show` or after `hide`.
 
-A host that calls these out of order sees a call fail; the plug-in does not crash or recover silently. Audio passes through unchanged on the main stereo port.
+A host that calls these out of order sees a call fail; the plug-in neither crashes nor quietly recovers. Audio passes through unchanged on the main stereo port.
