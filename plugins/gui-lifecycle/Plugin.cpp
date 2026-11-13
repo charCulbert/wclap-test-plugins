@@ -18,7 +18,7 @@ namespace wclap_test_plugins::gui_lifecycle
 namespace
 {
 
-constexpr char pluginId[] = "com.charlieculbert.wclap-test-plugins.gui-lifecycle";
+constexpr char pluginId[] = TEST_PLUGIN_ID;
 std::string resourceRoot;
 
 const char* mediaTypeFor(const std::string& path)
@@ -215,7 +215,8 @@ const clap_plugin_descriptor_t& descriptor() noexcept
     };
     static const clap_plugin_descriptor_t value {
         CLAP_VERSION, pluginId, "WCLAP GUI Lifecycle Test", "Charlie Culbert",
-        "", "", "", "0.1.0", "Strict embedded WebView GUI lifecycle fixture", features
+        TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
+        "Strict embedded WebView GUI lifecycle fixture", features
     };
     return value;
 }

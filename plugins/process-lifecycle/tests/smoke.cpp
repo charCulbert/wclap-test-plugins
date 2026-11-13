@@ -19,8 +19,7 @@ namespace
 {
 
 constexpr uint32_t blockSize = 128;
-constexpr char pluginId[] =
-    "com.charlieculbert.wclap-test-plugins.process-lifecycle";
+constexpr char pluginId[] = TEST_PLUGIN_ID;
 
 struct HostState
 {

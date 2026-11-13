@@ -13,8 +13,7 @@ namespace wclap_test_plugins::process_lifecycle
 namespace
 {
 
-constexpr char pluginId[] =
-    "com.charlieculbert.wclap-test-plugins.process-lifecycle";
+constexpr char pluginId[] = TEST_PLUGIN_ID;
 constexpr uint32_t finiteTailSamples = 256;
 constexpr uint32_t infiniteTailSamples = 0x7fffffffU;
 constexpr double steadyTimeScale = 65'536.0;
@@ -256,7 +255,7 @@ const clap_plugin_descriptor_t& descriptor() noexcept
     };
     static const clap_plugin_descriptor_t value {
         CLAP_VERSION, pluginId, "WCLAP Process Lifecycle Test", "Charlie Culbert",
-        "", "", "", "0.1.0",
+        TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
         "Observable CLAP process status, wake, steady-time, and tail fixture", features
     };
     return value;
