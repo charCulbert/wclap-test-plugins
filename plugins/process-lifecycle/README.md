@@ -1,8 +1,16 @@
-# `process-lifecycle` fixture
+# process-lifecycle
 
-Portable, GUI-free CLAP/WCLAP fixture for process scheduling tests. Native CLAP and WCLAP compile the same [`Plugin.cpp`](Plugin.cpp) and [`Entry.cpp`](Entry.cpp); the sources contain no Wasm-specific branches or APIs.
+A GUI-free utility with two mono outputs and one note input. Native CLAP and WCLAP compile the same [`Plugin.cpp`](Plugin.cpp) and [`Entry.cpp`](Entry.cpp); the sources contain no Wasm-specific branches or APIs.
 
-Plugin ID: `com.charlieculbert.wclap-test-plugins.process-lifecycle`
+Plug-in ID: `com.charlieculbert.wclap-test-plugins.process-lifecycle`
+
+## Proves
+
+The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances `steady_time` across skipped blocks, and reports finite and infinite tails.
+
+## A correct host
+
+**Loads** the plug-in and follows the protocol below: skipped blocks are cleared to silence, a due note-on wakes the plug-in, and the `9.0` poison block from `CLAP_PROCESS_ERROR` never reaches the output. After that error block it may stop processing the plug-in (**contain**), but must not pass its output on. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side of each step (statuses, markers, tail lengths, wake requests) on the native build under `ctest`.
 
 ## Ports and markers
 
@@ -28,7 +36,7 @@ MIDI note-ons (any channel, nonzero velocity) and equivalent CLAP note-ons selec
 
 The steady-time output is intentionally zero during key 61's quiet block so it does not keep `CONTINUE_IF_NOT_QUIET` awake.
 
-## Browser-host validation protocol
+## Validation protocol
 
 Use an offline render of at least 5248 frames with a 128-frame quantum and route both outputs to separate captured channels. Service requested main-thread callbacks between quanta, and retain lifecycle diagnostics (processed/skipped blocks, status, sleeping state, and wake source) when available. Schedule MIDI note-ons at these exact frames:
 
