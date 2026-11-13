@@ -20,7 +20,15 @@ add_subdirectory("${CLAP_HELPERS_ROOT}" clap-helpers EXCLUDE_FROM_ALL)
 add_subdirectory("${CLAP_WRAPPER_ROOT}" clap-wrapper EXCLUDE_FROM_ALL)
 
 if(ANY_WASM_TOOLCHAIN)
+    # WASI SDK's prebuilt libc, libc++ and compiler-rt carry DWARF, which is
+    # most of module.wasm. Archives ship a stripped copy; the build tree keeps
+    # the original for debugging.
+    get_filename_component(wasi_sdk_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(TEST_PLUGIN_STRIP llvm-strip HINTS "${wasi_sdk_bin}" REQUIRED)
+
     # Licences for the code linked into module.wasm, shipped in every archive.
+    # licenses/ holds the toolchain's (wasi-libc, libc++), which WASI SDK
+    # does not install.
     set(TEST_PLUGIN_THIRD_PARTY_LICENSES_DIR "${CMAKE_CURRENT_BINARY_DIR}/third-party-licenses")
     set(TEST_PLUGIN_THIRD_PARTY_LICENSE_FILES
         "${CLAP_SDK_ROOT}/LICENSE"
@@ -32,6 +40,13 @@ if(ANY_WASM_TOOLCHAIN)
         "${TEST_PLUGIN_THIRD_PARTY_LICENSES_DIR}/clap-helpers.txt" COPYONLY)
     configure_file("${CLAP_WRAPPER_ROOT}/LICENSE"
         "${TEST_PLUGIN_THIRD_PARTY_LICENSES_DIR}/clap-wrapper.txt" COPYONLY)
+    file(GLOB toolchain_licenses "${CMAKE_CURRENT_SOURCE_DIR}/licenses/*.txt")
+    foreach(license IN LISTS toolchain_licenses)
+        get_filename_component(license_name "${license}" NAME)
+        configure_file("${license}"
+            "${TEST_PLUGIN_THIRD_PARTY_LICENSES_DIR}/${license_name}" COPYONLY)
+        list(APPEND TEST_PLUGIN_THIRD_PARTY_LICENSE_FILES "${license}")
+    endforeach()
 endif()
 
 include(cmake/AddTestPlugin.cmake)
