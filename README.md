@@ -10,7 +10,7 @@ A stereo pass-through with an embedded WebView. Its `clap.gui` implementation en
 
 ### `process-lifecycle`
 
-A GUI-free utility with two mono outputs and one note input. It makes every CLAP process status, sleep wake path, `steady_time`, and finite/infinite tail behavior observable. See [`process-lifecycle/README.md`](process-lifecycle/README.md) for the MIDI protocol and exact browser-host checks.
+A GUI-free utility with two mono outputs and one note input. It makes every CLAP process status, sleep wake path, `steady_time`, and finite/infinite tail behavior observable. See [`plugins/process-lifecycle/README.md`](plugins/process-lifecycle/README.md) for the MIDI protocol and exact browser-host checks.
 
 ## Download
 
