@@ -115,6 +115,9 @@ protected:
             input.open(filePath, std::ios::binary);
             if (input) break;
             input.clear();
+            // Under WASI, open() only resolves paths inside a preopened directory.
+            // A host may preopen the plug-in directory as "." rather than at its
+            // absolute path, so retry the same path relative to the current one.
             if (!filePath.empty() && filePath.front() == '/')
                 input.open(filePath.substr(1), std::ios::binary);
             if (input) break;
@@ -160,7 +163,12 @@ protected:
         return true;
     }
     void guiDestroy() noexcept override { created = sized = visible = parented = false; }
-    bool guiShow() noexcept override { return created && parented && (visible = true); }
+    bool guiShow() noexcept override
+    {
+        if (!created || !parented) return false;
+        visible = true;
+        return true;
+    }
     bool guiHide() noexcept override
     {
         if (!created) return false;
