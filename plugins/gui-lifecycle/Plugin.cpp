@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace example::runtime_example::gui
+namespace wclap_test_plugins::gui_lifecycle
 {
 namespace
 {
@@ -234,4 +234,4 @@ const void* entryGetFactory(const char* factoryId)
     return &factory;
 }
 
-} // namespace example::runtime_example::gui
+} // namespace wclap_test_plugins::gui_lifecycle

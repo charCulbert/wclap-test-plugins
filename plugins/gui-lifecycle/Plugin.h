@@ -2,7 +2,7 @@
 
 #include <clap/clap.h>
 
-namespace example::runtime_example::gui
+namespace wclap_test_plugins::gui_lifecycle
 {
 
 enum class Command : uint8_t
@@ -15,4 +15,4 @@ bool entryInit(const char* path);
 void entryDeinit();
 const void* entryGetFactory(const char* factoryId);
 
-} // namespace example::runtime_example::gui
+} // namespace wclap_test_plugins::gui_lifecycle
