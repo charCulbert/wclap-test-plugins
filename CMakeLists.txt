@@ -65,3 +65,5 @@ foreach(plugin_dir IN LISTS plugin_dirs)
         add_test_plugin(NAME ${plugin_name})
     endif()
 endforeach()
+
+write_test_plugin_list()

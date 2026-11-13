@@ -1,4 +1,4 @@
-name: Build fixtures
+name: Build
 
 on:
   push:
@@ -8,76 +8,141 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
+
+env:
+  WASI_SDK_VERSION: "33"
+  WASI_SDK_SHA256: "0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce"
 
 jobs:
   wclap:
     runs-on: ubuntu-latest
-    env:
-      WASI_SDK_VERSION: "33"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
       - name: Install WASI SDK
         run: |
           curl -fL -o wasi-sdk.tar.gz \
             "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+          echo "${WASI_SDK_SHA256}  wasi-sdk.tar.gz" | sha256sum -c -
           tar -xzf wasi-sdk.tar.gz
           echo "WASI_SDK_PATH=$PWD/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" >> "$GITHUB_ENV"
-      - name: Build WCLAP fixtures
+      - name: Build
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$WASI_SDK_PATH/share/cmake/wasi-sdk.cmake"
           cmake --build build --parallel
-      - name: Record checksums
-        working-directory: build/artifacts
-        run: sha256sum *.wclap.tar.gz > SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - name: Collect
+        run: |
+          mkdir dist
+          cp build/artifacts/*.wclap.tar.gz build/plugins.json dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-wclap
+          path: dist/
+
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir dist
+          for dir in plugins/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/Plugin.cpp" ] || continue
+            clap=$(find build/artifacts -name "$name.clap" -prune | head -n 1)
+            [ -n "$clap" ] || { echo "no $name.clap in build/artifacts"; exit 1; }
+            (cd "$(dirname "$clap")" &&
+              cmake -E tar cf "$GITHUB_WORKSPACE/dist/$name-${{ matrix.platform }}.clap.zip" \
+                --format=zip "$name.clap")
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-${{ matrix.platform }}
+          path: dist/
+
+  # Gathers every build into one directory with manifest.json, SHA256SUMS
+  # and index.html. The release and Pages jobs publish that directory.
+  package:
+    needs: [wclap, native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: build-*
+          path: dist
+          merge-multiple: true
+      - name: Write manifest
+        env:
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          mv dist/plugins.json plugins.json
+          python3 scripts/release-manifest.py plugins.json dist --sha "$GITHUB_SHA" --tag "$TAG"
+          cat dist/manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wclap-test-plugins
-          path: |
-            build/artifacts/*.wclap.tar.gz
-            build/artifacts/SHA256SUMS
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/')
+          path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wclap-test-plugins
+          path: dist
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            build/artifacts/*.wclap.tar.gz \
-            build/artifacts/SHA256SUMS \
-            --generate-notes
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes \
+            dist/*.wclap.tar.gz dist/*.clap.zip dist/manifest.json dist/SHA256SUMS
 
   pages:
     if: github.ref == 'refs/heads/main'
-    needs: wclap
+    needs: package
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wclap-test-plugins
           path: site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
-
-  native-clap:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Build native CLAP fixtures
-        run: |
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-native --parallel
-          ctest --test-dir build-native --output-on-failure
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

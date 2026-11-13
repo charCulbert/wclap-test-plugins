@@ -6,6 +6,9 @@
 # Under a Wasm toolchain it also packages artifacts/<name>.wclap.tar.gz with
 # module.wasm, the resources and the licences at the archive root.
 # Any tests/*.cpp file becomes a native ctest linked against <name>-impl.
+#
+# write_test_plugin_list() writes plugins.json (version, and each plug-in's
+# name and ID) to the build directory for the release manifest.
 
 set(TEST_PLUGIN_ID_PREFIX "com.charlieculbert.wclap-test-plugins"
     CACHE STRING "Prefix for plug-in IDs; each ID is <prefix>.<name>")
@@ -23,6 +26,8 @@ function(add_test_plugin)
     set(name "${ARG_NAME}")
     set(dir "${PROJECT_SOURCE_DIR}/plugins/${name}")
     set(id "${TEST_PLUGIN_ID_PREFIX}.${name}")
+
+    set_property(GLOBAL APPEND PROPERTY TEST_PLUGIN_NAMES "${name}")
 
     add_library(${name}-impl STATIC "${dir}/Plugin.cpp")
     target_include_directories(${name}-impl PUBLIC "${dir}")
@@ -91,4 +96,16 @@ function(add_test_plugin)
             add_test(NAME ${test_target} COMMAND ${test_target})
         endforeach()
     endif()
+endfunction()
+
+function(write_test_plugin_list)
+    get_property(names GLOBAL PROPERTY TEST_PLUGIN_NAMES)
+    set(entries)
+    foreach(name IN LISTS names)
+        list(APPEND entries
+            "    {\"name\": \"${name}\", \"id\": \"${TEST_PLUGIN_ID_PREFIX}.${name}\"}")
+    endforeach()
+    list(JOIN entries ",\n" entries)
+    file(WRITE "${PROJECT_BINARY_DIR}/plugins.json"
+        "{\n  \"version\": \"${PROJECT_VERSION}\",\n  \"plugins\": [\n${entries}\n  ]\n}\n")
 endfunction()
