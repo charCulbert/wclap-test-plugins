@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 extern "C" const clap_plugin_entry_t clap_entry;
 
@@ -115,6 +116,22 @@ struct EventList
     }
 };
 
+struct OutputList
+{
+    std::vector<clap_event_note_t> ends;
+    clap_output_events_t events { this, push };
+
+    static bool push(const clap_output_events_t* events, const clap_event_header_t* header)
+    {
+        if (header->space_id != CLAP_CORE_EVENT_SPACE_ID || header->type != CLAP_EVENT_NOTE_END
+            || header->size != sizeof(clap_event_note_t))
+            throw std::runtime_error("unexpected output event");
+        static_cast<OutputList*>(events->ctx)->ends.push_back(
+            *reinterpret_cast<const clap_event_note_t*>(header));
+        return true;
+    }
+};
+
 struct Block
 {
     std::array<float, blockSize> signal {};
@@ -126,6 +143,7 @@ struct Block
         { steadyChannels.data(), nullptr, 1, 0, 0 },
     }};
     EventList eventList;
+    OutputList out;
     clap_process_t process {};
 
     clap_process_status run(const clap_plugin_t* plugin, int64_t steadyTime, int key = -1)
@@ -139,7 +157,22 @@ struct Block
         process.audio_outputs = outputs.data();
         process.audio_outputs_count = outputs.size();
         process.in_events = &eventList.events;
-        return plugin->process(plugin, &process);
+        process.out_events = &out.events;
+        out.ends.clear();
+        const auto status = plugin->process(plugin, &process);
+        // events.h: each CLAP note-on gets a NOTE_END with its address on its
+        // frame; MIDI note-ons have no voice to end.
+        if (eventList.present && eventList.dialect == Dialect::clap)
+        {
+            const auto& on = eventList.event.note;
+            if (out.ends.size() != 1 || out.ends[0].header.time != on.header.time
+                || out.ends[0].note_id != on.note_id || out.ends[0].port_index != on.port_index
+                || out.ends[0].channel != on.channel || out.ends[0].key != on.key)
+                throw std::runtime_error("NOTE_END mismatch for a CLAP note-on");
+        }
+        else if (!out.ends.empty())
+            throw std::runtime_error("NOTE_END sent with no CLAP note-on");
+        return status;
     }
 };
 

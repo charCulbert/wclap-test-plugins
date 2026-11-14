@@ -18,7 +18,7 @@ input stops) when the plug-in reports a change.
 "must be discarded". After that block it may stop processing the plug-in (**contain**). Whether it skips calls while
 the plug-in sleeps or its tail has run out is its own choice; the protocol says what each choice shows.
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side of each step (statuses, markers, steady-time advances,
-tail lengths, `tail.changed` calls, wake requests, `reset`), once with MIDI note-ons and once with CLAP note-ons, on the
+tail lengths, `tail.changed` calls, `NOTE_END` events, wake requests, `reset`), once with MIDI note-ons and once with CLAP note-ons, on the
 native build under `ctest`.
 
 ## Ports and markers
@@ -32,12 +32,17 @@ The plug-in has no audio inputs, two mono audio outputs, and one note input.
 
 The note input, `Lifecycle controls`, takes CLAP and MIDI notes and prefers MIDI. The preference is only a hint
 ([`ext/note-ports.h`](../../external/clap/include/clap/ext/note-ports.h)), so a host may send either; a MIDI note-on
-(any channel, non-zero velocity) and a CLAP note-on with the same key do the same thing.
+(any channel, non-zero velocity) and a CLAP note-on with the same key do the same thing. The plug-in plays no notes, so
+for each CLAP note-on it sends a `CLAP_EVENT_NOTE_END` with the note-on's note ID, port, channel and key on the same
+frame: the host keeps a voice for every note-on until the plug-in sends `NOTE_END`
+([`events.h`](../../external/clap/include/clap/events.h), comment above `CLAP_EVENT_NOTE_ON`). MIDI note-ons get none.
 
 On its first call after `activate()` the plug-in writes `0.1`, requests `host.request_callback()`, and returns
 `CLAP_PROCESS_SLEEP`. In `on_main_thread()` it calls `host.request_process()`; that wake call writes `0.2` and sleeps
 again. If that call also carries a note-on that selects a mode, the mode's marker and status win and no `0.2` block
-appears. Each activation starts the protocol over, in sleep mode.
+appears. A note-on in the very first block after `activate()` still selects its mode, but that block writes `0.1` and
+returns `CLAP_PROCESS_SLEEP`, and the `0.2` block, if the host processes one, comes next; the mode's marker and status
+start after them. Each activation starts the protocol over, in sleep mode.
 
 Note-ons select the remaining behaviour:
 

@@ -90,7 +90,7 @@ protected:
 
         std::fill_n(signal, process->frames_count, 0.0f);
         std::fill_n(steady, process->frames_count, 0.0f);
-        const bool modeChanged = applyEvents(process->in_events);
+        const bool modeChanged = applyEvents(process->in_events, process->out_events);
         steadyMark = steadyTimeAdvance(process);
         reportTailChange();
 
@@ -269,7 +269,8 @@ private:
     }
 
     // Returns whether a note-on selected a mode.
-    bool applyEvents(const clap_input_events_t* events) noexcept
+    bool applyEvents(const clap_input_events_t* events,
+                     const clap_output_events_t* out) noexcept
     {
         bool modeChanged = false;
         const auto count = events ? events->size(events) : 0;
@@ -290,6 +291,16 @@ private:
                 const auto& event = *reinterpret_cast<const clap_event_note_t*>(header);
                 if (event.key >= 0 && event.key <= 127)
                     modeChanged |= setModeForKey(static_cast<uint8_t>(event.key));
+                // events.h: the host keeps a voice for each note-on until the
+                // plug-in sends NOTE_END. No note sounds, so end it at once.
+                if (out)
+                {
+                    auto end = event;
+                    end.header.type = CLAP_EVENT_NOTE_END;
+                    end.header.size = sizeof(end);
+                    end.header.flags = 0;
+                    out->try_push(out, &end.header);
+                }
             }
         }
         return modeChanged;
