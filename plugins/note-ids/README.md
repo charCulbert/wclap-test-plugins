@@ -57,7 +57,8 @@ event ends several voices, their encoded IDs add up on the right channel and the
 order their note-ons arrived, whichever voice slots they used.
 
 Several note-ons on one frame add up on the left channel too. Activating or resetting the plug-in ends every voice
-without sending `NOTE_END`. There are 64 voices. A note-on with none free still writes its click on the left, starts no voice, and ends at once:
+without sending `NOTE_END`. There are 64 voices and none is ever stolen. A note-on with none free still writes its
+encoded ID on the left, starts no voice, and ends at once:
 the right channel shows its encoded ID on the same frame and it gets its `NOTE_END` there. The host keeps a voice for
 every note-on until the plug-in sends `NOTE_END` ([`events.h`](../../external/clap/include/clap/events.h), comment
 above `CLAP_EVENT_NOTE_ON`), so every note-on gets one.
@@ -85,6 +86,12 @@ Frame 8 is a note-on without a note ID, which CLAP allows (`-1`); it ends with t
 drops or renumbers note IDs shows other values on the left channel. A host that sends note ID `-1` on
 note-on writes `-1` there. A host that rewrites the wildcard at frame 20 to a single note ID ends only that voice.
 
-The smoke test also sends two events a correct host does not send, to check the plug-in's side: a note-on with key `-1`
-at frame 24 (ignored: nothing written, no voice), and a note-on (5, 0, 65) stamped at frame 500 of a 128-frame block
+[`events.h`](../../external/clap/include/clap/events.h) says a host "may choose to issue a note id only at note on",
+sending a note-off as, for example, `[0,0,60,-1]`. Such a host sends the frame-10 note-off as (-1, 0, 60), which ends
+both voices on key 60: right `102` at frame 10, and `NOTE_END` (0, 0, 60) then (100, 0, 60). At frame 20 only
+(300, 0, 60) is left to end: right `301`, one `NOTE_END`. That is correct. Frames 12 and 16 need a host that sends a
+note ID on a note-off or choke; one that does not sends `-1` there and shows what the matching rules above give.
+
+The smoke test also sends events a correct host does not send, to check the plug-in's side: note-ons with key, channel
+or port `-1` at frames 24 to 26 (ignored: nothing written, no voice), and a note-on (5, 0, 65) stamped at frame 500 of a 128-frame block
 (applied on the last frame: left `6` at frame 127).

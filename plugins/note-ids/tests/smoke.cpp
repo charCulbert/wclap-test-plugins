@@ -161,6 +161,8 @@ void runSmoke()
     in.add(20, CLAP_EVENT_NOTE_OFF, -1, 60);
     in.add(22, CLAP_EVENT_NOTE_OFF, -1, -1, -1, -1);
     in.add(24, CLAP_EVENT_NOTE_ON, 400, -1);
+    in.add(25, CLAP_EVENT_NOTE_ON, 401, 66, -1);
+    in.add(26, CLAP_EVENT_NOTE_ON, 402, 66, 0, -1);
     in.add(500, CLAP_EVENT_NOTE_ON, 5, 65);
 
     std::array<float, blockSize> started {};
@@ -214,6 +216,16 @@ void runSmoke()
     expectEnds(runBlock(plugin, full, started, ended), ends, "no free voice");
     require(started[64] == 65.0f && ended[64] == 65.0f,
             "note-on with no free voice is not marked started and ended");
+
+    // A host that issues note IDs only at note-on (events.h) sends the
+    // frame-10 note-off as (-1, 0, 60), which ends both key-60 voices.
+    EventList onlyAtNoteOn;
+    onlyAtNoteOn.add(2, CLAP_EVENT_NOTE_ON, 0, 60);
+    onlyAtNoteOn.add(4, CLAP_EVENT_NOTE_ON, 100, 60);
+    onlyAtNoteOn.add(10, CLAP_EVENT_NOTE_OFF, -1, 60);
+    expectEnds(runBlock(plugin, onlyAtNoteOn, started, ended),
+               { { 10, 0, 0, 60 }, { 10, 100, 0, 60 } }, "note IDs only at note-on");
+    require(ended[10] == 102.0f, "right at frame 10 is " + std::to_string(ended[10]));
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
