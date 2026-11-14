@@ -172,7 +172,8 @@ void runSmoke()
     expect(block.left, 0, 4, 1.0f, "kit 1 before the change back");
     expect(block.left, 4, blockSize, 0.0f, "kit 0 again");
     expect(block.right, 0, blockSize, 2.0f, "two reads");
-    require(callbackRequests == 2, "no request_callback for the change back");
+    require(callbackRequests == 2,
+            "request_callback count for the change back is " + std::to_string(callbackRequests));
     plugin->on_main_thread(plugin);
     require(namesChanged == 2, "note_name.changed not called for the change back");
 

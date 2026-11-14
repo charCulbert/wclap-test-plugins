@@ -15,9 +15,11 @@ The host reads a plug-in's note names, including a name for any key (`-1`), and 
 
 ## A correct host
 
-**Loads** the plug-in and shows its note names. After a program change it services the plug-in's
-`request_callback`, receives `note_name.changed` from `on_main_thread`, and reads the names again: key 38 is then
-`Rim`. A host that caches the names and ignores `changed` keeps showing `Snare`. The protocol's program change needs a
+**Loads** the plug-in. After a program change the plug-in calls `request_callback` and then, from `on_main_thread`,
+`note_name.changed`. [`ext/note-name.h`](../../external/clap/include/clap/ext/note-name.h) says only that `changed`
+informs the host that the note names have changed; it does not say what the host does next. Reading the names again is
+the expected response: a host that does so shows key 38 as `Rim`. A host that shows no note names, or caches them and
+ignores `changed` (still `Snare`), is making its own choice, not breaking CLAP. The protocol's program change needs a
 host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, both
 kits' names, the kit and read count in the output, one `request_callback` and one `changed` per kit change) on the
 native build under `ctest`.
