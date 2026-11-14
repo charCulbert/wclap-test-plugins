@@ -21,6 +21,13 @@ FORMAT_VERSION = 1
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def ids(name, first):
+    """Every plug-in ID the bundle holds: its own, and any the README lists that extend it (`<id>.<suffix>`)."""
+    readme = (ROOT / "plugins" / name / "README.md").read_text(encoding="utf-8")
+    more = re.findall(r"`(" + re.escape(first) + r"\.[A-Za-z0-9._-]+)`", readme)
+    return [first] + sorted(set(more))
+
+
 def proves(name):
     readme = ROOT / "plugins" / name / "README.md"
     lines = readme.read_text(encoding="utf-8").splitlines()
@@ -75,7 +82,7 @@ def main():
                                   "sha256": digests[p.name], "size": p.stat().st_size})
         if not artifacts:
             sys.exit(f"no artifacts for {name}")
-        plugins.append({"id": entry["id"], "name": name, "version": listing["version"],
+        plugins.append({"id": entry["id"], "ids": ids(name, entry["id"]), "name": name, "version": listing["version"],
                         "proves": proves(name), "artifacts": artifacts})
     stray = set(digests) - claimed
     if stray:
