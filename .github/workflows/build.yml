@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir dist
           cp build/artifacts/*.wclap.tar.gz build/plugins.json dist/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-wclap
           path: dist/
@@ -79,7 +79,7 @@ jobs:
                 --format=zip "$name.clap")
           done
           ls -l dist
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-${{ matrix.platform }}
           path: dist/
@@ -103,7 +103,7 @@ jobs:
           mv dist/plugins.json plugins.json
           python3 scripts/release-manifest.py plugins.json dist --sha "$GITHUB_SHA" --tag "$TAG"
           cat dist/manifest.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wclap-test-plugins
           path: dist/
