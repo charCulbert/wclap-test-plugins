@@ -221,6 +221,7 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_params_t* params
     {
         EventList reset;
         reset.value(0, 0.0);
+        reset.mod(0, 0.0);
         params->flush(plugin, &reset.events, nullptr);
     }
     require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), name + ": activate failed");
@@ -316,6 +317,19 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_params_t* params
     expect(block.left, 0, blockSize, 0.0f, "left with one unmodulated voice");
     require(block.out.ends.empty(), name + ": NOTE_END sent with no note-off");
 
+    // Reset and reactivation end voices but keep Level and global modulation.
+    plugin->reset(plugin);
+    require(block.run(plugin, none, 2 * blockSize) == CLAP_PROCESS_CONTINUE,
+            name + ": status mismatch");
+    expect(block.right, 0, blockSize, 0.375f, "modulation kept across reset");
+    plugin->stop_processing(plugin);
+    plugin->deactivate(plugin);
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), name + ": reactivate failed");
+    require(plugin->start_processing(plugin), name + ": restart processing failed");
+    require(block.run(plugin, none, 3 * blockSize) == CLAP_PROCESS_CONTINUE,
+            name + ": status mismatch");
+    expect(block.right, 0, blockSize, 0.375f, "modulation kept across reactivation");
+
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
 }
@@ -371,6 +385,16 @@ void runVoiceChecks(const clap_plugin_t* plugin)
             "status mismatch");
     expect(block.left, 0, blockSize, 0.0f, "invalid note-on was not ignored");
     require(block.out.ends.empty(), "NOTE_END sent for an invalid note-on");
+
+    // A per-voice modulation listed before its note-on finds no voice.
+    EventList early;
+    early.mod(0, 0.5, 7);
+    early.note(0, CLAP_EVENT_NOTE_ON, 7, 60);
+    early.note(4, CLAP_EVENT_NOTE_OFF, 7, 60);
+    require(block.run(plugin, early, 4 * blockSize) == CLAP_PROCESS_CONTINUE,
+            "status mismatch");
+    expect(block.left, 0, 1, 1.0f, "note-on click");
+    expect(block.left, 1, 4, 0.0f, "modulation listed before its note-on was not lost");
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);

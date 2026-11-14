@@ -190,11 +190,12 @@ protected:
     }
 
 private:
+    // Ends every voice. Level and the global modulation are parameter state
+    // and keep their values.
     void clear() noexcept
     {
         voices = {};
         voiceSum = 0.0;
-        globalModulation = 0.0;
     }
 
     // Applies one event and returns the click it writes on its frame.

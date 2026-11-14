@@ -76,7 +76,11 @@ left = click + sum over sounding voices of (voice modulation + voice tuning / 12
 
 A voice matches when each of the event's note ID, port, channel and key is `-1` or equal to the voice's. Voice state does
 not carry over: a new voice starts with modulation and tuning 0 even if an earlier voice on the same key had them.
-Activating or resetting the plug-in ends every voice and clears the global modulation; `Level` keeps its value. There
+Events apply in list order, so a per-voice `PARAM_MOD` or a note expression listed before the `NOTE_ON` it addresses,
+even on the same frame, finds no voice and is lost. [`events.h`](../../external/clap/include/clap/events.h) says a
+plug-in that gets a note expression at the same sample as a `NOTE_ON` "should apply that expression to all generated
+samples"; this plug-in does that only when the expression comes after the note-on in the list.
+Activating or resetting the plug-in ends every voice; `Level` and the global modulation keep their values. There
 are 64 voices and none is ever stolen. A note-on with none free still clicks, starts no voice, and gets its `NOTE_END`
 at once, on its own frame:
 the host keeps a voice for every note-on until the plug-in sends `NOTE_END`
@@ -94,7 +98,8 @@ Values used in the protocol below are exact in 32-bit floats; compare other valu
 
 ## Validation protocol
 
-Render one block of at least 64 frames from a freshly activated plug-in with `Level` at 0, and schedule these events on
+Render one block of at least 64 frames from a freshly activated plug-in with `Level` and the global modulation at 0
+(a new instance has both at 0), and schedule these events on
 note port 0. Run it twice: once with the note events sent as CLAP note events (the CLAP run), once as MIDI (the MIDI
 run). The parameter events are the same in both runs. The tuning (a note expression) and the choke exist only in the
 CLAP dialect ([`ext/note-ports.h`](../../external/clap/include/clap/ext/note-ports.h): `CLAP_NOTE_DIALECT_CLAP` "uses
