@@ -15,10 +15,19 @@ on running the plug-in.
 
 ## A correct host
 
-**Loads** the plug-in, provides `clap.log`, and records or shows all seven messages below with their severities and
-exact text, including the two non-ASCII characters. It keeps processing the plug-in afterwards: a `FATAL`,
-`HOST_MISBEHAVING` or `PLUGIN_MISBEHAVING` message is a report, not a request to stop. A host that does not provide
-`clap.log` gets no messages and the left channel stays `0`. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's
+**Loads** the plug-in. If it provides `clap.log`, it takes all seven calls below without crashing or blocking, from
+the audio thread and the main thread: `log` is `[thread-safe]`
+([`ext/log.h`](../../external/clap/include/clap/ext/log.h)). That is the only requirement. A host that does not
+provide `clap.log` gets no messages and the left channel stays `0`; that is correct too.
+
+Recommended, not required by CLAP:
+
+- Record or show each message with its severity and exact text, including the two non-ASCII characters.
+- Keep processing the plug-in after the `FATAL` message. CLAP does not say what a host does with `FATAL`; a host that
+  stops or removes the plug-in on it renders no block after step 2 of the protocol.
+
+Messages 6 and 7 are synthetic test messages: they report no real misbehaviour by the host or the plug-in, and exist
+only so the host sees each severity once. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's
 side (ports, every message in order, the output before and after each step, one `request_callback`) on the native
 build under `ctest`.
 
@@ -61,6 +70,8 @@ the block's own message, so the first block already shows `1, 0`.
 
 | Step | Host action | Expected |
 | ---: | --- | --- |
-| 1 | Load, activate and render one block | Message 1 logged; output `1, 0` |
-| 2 | Service the main-thread callback | Messages 2 to 7 logged, in order |
-| 3 | Render another block | Output `7, 6`; the host is still processing the plug-in |
+| 1 | Load, activate and render one block | Message 1 taken; output `1, 0` |
+| 2 | Service the main-thread callback | Messages 2 to 7 taken, in order |
+| 3 | Render another block (recommended: a host may stop after `FATAL`) | Output `7, 6` |
+
+A host that keeps a log shows the seven messages there with their exact text and severities.
