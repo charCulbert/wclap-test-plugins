@@ -65,7 +65,9 @@ whatever dialect its port lists.
 | `CLAP_EVENT_MIDI` (`10`), `CLAP_EVENT_MIDI_SYSEX` (`11`), `CLAP_EVENT_MIDI2` (`12`) | `11`, `12`, `13` | Yes |
 | Any other core event, such as a parameter value (`5`) | type + 1 | No |
 
-An echoed event is pushed to the output event list unchanged (same time, flags, port and payload), in input order. A
+An echoed event is pushed to the output event list unchanged (same time, flags, port and payload), in input order. The
+echo keeps the input's dialect even when the output port does not list it: a `CLAP_EVENT_NOTE_ON` or
+`CLAP_EVENT_NOTE_CHOKE` sent to the MIDI plug-in comes back as that CLAP event, not translated to MIDI. A
 sysex echo points at the host's own buffer. [`events.h`](../../external/clap/include/clap/events.h) says that, from
 plug-in to host, the buffer lives "only the duration of a try_push call", so the host copies the bytes inside
 `try_push`. Values
