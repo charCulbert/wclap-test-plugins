@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,11 @@ namespace
 {
 
 constexpr char pluginId[] = TEST_PLUGIN_ID;
+
+// entry.h: init and deinit may be called more than once, in matched pairs, so
+// count them and clear the root only on the last deinit.
+std::mutex entryMutex;
+unsigned entryCount = 0;
 std::string resourceRoot;
 
 const char* mediaTypeFor(const std::string& path)
@@ -103,18 +109,26 @@ protected:
         return true;
     }
 
-    bool enableDraftExtensions() const noexcept override { return true; }
-    bool implementsWebview() const noexcept override { return true; }
+    // clap.webview/3 is a draft extension. The plug-in serves it itself instead
+    // of enabling the helpers' draft extensions, which would also expose
+    // background_activation and background_state_context, which this plug-in
+    // does not implement.
+    const void* extension(const char* id) noexcept override
+    {
+        if (id && std::strcmp(id, CLAP_EXT_WEBVIEW) == 0) return &webviewExtension;
+        return nullptr;
+    }
 
-    int32_t webviewGetUri(char* uri, uint32_t capacity) const noexcept override
+    int32_t pageUri(char* uri, uint32_t capacity) noexcept
     {
         constexpr char path[] = "/ui/index.html";
         if (uri && capacity) std::snprintf(uri, capacity, "%s", path);
+        uriRead = true;
         return sizeof(path);
     }
 
-    bool webviewGetResource(const char* path, char* mime, uint32_t mimeCapacity,
-                            const clap_ostream_t* stream) override
+    bool pageResource(const char* path, char* mime, uint32_t mimeCapacity,
+                            const clap_ostream_t* stream) noexcept
     {
         if (!path || !stream || std::strstr(path, "..")) return false;
         std::string relative = path;
@@ -146,16 +160,26 @@ protected:
         }
         if (!input.is_open()) return false;
         std::vector<uint8_t> bytes(std::istreambuf_iterator<char>(input), {});
-        if (mime && mimeCapacity)
-            std::snprintf(mime, mimeCapacity, "%s", mediaTypeFor(relative));
-        return writeAll(stream, bytes.data(), bytes.size());
+        // webview.h: the type is written only if the buffer is large enough, and
+        // the call returns true only if the type and all the data were provided.
+        const char* type = mediaTypeFor(relative);
+        const bool typeFits = mime && mimeCapacity > std::strlen(type);
+        if (typeFits) std::memcpy(mime, type, std::strlen(type) + 1);
+        const bool written = writeAll(stream, bytes.data(), bytes.size());
+        return typeFits && written;
     }
 
-    bool webviewReceive(const void* buffer, uint32_t size) const noexcept override
+    bool pageMessage(const void* buffer, uint32_t size) noexcept
     {
-        // The page may send as soon as it loads, which can be before show(), so
-        // messages are taken once the view is created and parented.
-        if (!created || !parented || !buffer || size == 0) return false;
+        // webview.h: get_uri is called at least once before the host accepts
+        // messages. The page may send as soon as it loads, before set_parent
+        // or show, so messages are taken from then until gui.destroy.
+        if (!created || !uriRead)
+        {
+            hostMisbehaving("webview.receive before gui.create and webview.get_uri; refused");
+            return false;
+        }
+        if (!buffer || size == 0) return false;
         const auto command = static_cast<Command>(*static_cast<const uint8_t*>(buffer));
         const std::array<uint8_t, 2> reply {
             static_cast<uint8_t>(command),
@@ -181,13 +205,17 @@ protected:
     {
         if (created || !guiIsApiSupported(api, floating)) return false;
         created = true;
-        sized = false;
         return true;
     }
-    void guiDestroy() noexcept override { created = sized = visible = parented = false; }
+    void guiDestroy() noexcept override { created = visible = parented = false; }
     bool guiShow() noexcept override
     {
-        if (!created || !parented) return false;
+        // gui.h lists set_parent before show for an embedded window.
+        if (!created || !parented)
+        {
+            hostMisbehaving("gui.show before a successful gui.set_parent; refused");
+            return false;
+        }
         visible = true;
         return true;
     }
@@ -202,24 +230,48 @@ protected:
         if (!created || !outputWidth || !outputHeight) return false;
         *outputWidth = width;
         *outputHeight = height;
-        sized = true;
         return true;
     }
     bool guiSetParent(const clap_window_t* window) noexcept override
     {
-        parented = created && sized && window && window->api
+        // webview.h: the window pointer must be null.
+        parented = created && window && window->api
             && std::strcmp(window->api, CLAP_WINDOW_API_WEBVIEW) == 0
             && window->ptr == nullptr;
+        if (!parented)
+            hostMisbehaving("gui.set_parent without a webview window with a null ptr; refused");
         return parented;
     }
 
 private:
+    static GuiPlugin& self(const clap_plugin_t* plugin) noexcept
+    {
+        return static_cast<GuiPlugin&>(*static_cast<Base*>(plugin->plugin_data));
+    }
+    static int32_t clapGetUri(const clap_plugin_t* plugin, char* uri, uint32_t capacity) noexcept
+    {
+        return self(plugin).pageUri(uri, capacity);
+    }
+    static bool clapGetResource(const clap_plugin_t* plugin, const char* path, char* mime,
+                                uint32_t mimeCapacity, const clap_ostream_t* stream) noexcept
+    {
+        return self(plugin).pageResource(path, mime, mimeCapacity, stream);
+    }
+    static bool clapReceive(const clap_plugin_t* plugin, const void* buffer,
+                            uint32_t size) noexcept
+    {
+        return self(plugin).pageMessage(buffer, size);
+    }
+    static constexpr clap_plugin_webview_t webviewExtension {
+        clapGetUri, clapGetResource, clapReceive
+    };
+
     const clap_host_t* host;
     const clap_host_webview_t* hostWebview = nullptr;
     static constexpr uint32_t width = 400;
     static constexpr uint32_t height = 260;
     bool created = false;
-    bool sized = false;
+    bool uriRead = false;
     bool parented = false;
     bool visible = false;
 };
@@ -254,10 +306,15 @@ const clap_plugin_descriptor_t& descriptor() noexcept
 bool entryInit(const char* path)
 {
     if (!path) return false;
-    resourceRoot = path;
+    std::lock_guard<std::mutex> lock(entryMutex);
+    if (entryCount++ == 0) resourceRoot = path;
     return true;
 }
-void entryDeinit() { resourceRoot.clear(); }
+void entryDeinit()
+{
+    std::lock_guard<std::mutex> lock(entryMutex);
+    if (entryCount > 0 && --entryCount == 0) resourceRoot.clear();
+}
 const void* entryGetFactory(const char* factoryId)
 {
     if (!factoryId || std::strcmp(factoryId, CLAP_PLUGIN_FACTORY_ID) != 0) return nullptr;
