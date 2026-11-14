@@ -9,6 +9,8 @@ identical code.
 | Plug-in | Proves |
 | --- | --- |
 | [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface in CLAP order (`create`, `get_size`, `set_parent`, `show`) and serves the plug-in's multi-file resources to it. |
+| [`note-ids`](plugins/note-ids/README.md) | The host passes its note IDs through to the plug-in, ends notes by ID, key, or a wildcard (`-1`) that matches every voice on a key, delivers note chokes, and receives `CLAP_EVENT_NOTE_END` with the address of the note-on. |
+| [`probe`](plugins/probe/README.md) | The host delivers note, parameter, modulation and note-expression events on their exact frame, with their exact values, to the right voices. |
 | [`process-lifecycle`](plugins/process-lifecycle/README.md) | The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances `steady_time` across skipped blocks, and reports finite and infinite tails (how long a plug-in keeps sounding after its input stops). |
 
 Each plug-in's README says what a correct host does with it: load it, reject it, or contain it (stop processing it
