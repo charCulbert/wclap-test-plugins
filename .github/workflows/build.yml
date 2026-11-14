@@ -89,13 +89,21 @@ jobs:
   package:
     needs: [wclap, native]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: build-*
-          path: dist
-          merge-multiple: true
+      # gh rather than download-artifact: the action failed its digest check on the Linux build every run,
+      # though the same bytes download and match through the API.
+      - name: Download builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'build-*' --dir downloads
+          mkdir dist
+          find downloads -type f -exec mv {} dist/ \;
+          ls -l dist
       - name: Write manifest
         env:
           TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
