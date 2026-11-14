@@ -85,8 +85,10 @@ protected:
         const auto count = events ? events->size(events) : 0;
         uint32_t next = 0;
         const auto frames = process->frames_count;
+        outEvents = process->out_events;
         for (uint32_t frame = 0; frame < frames; ++frame)
         {
+            eventFrame = frame;
             double click = 0.0;
             // Events stamped past the block are applied on its last frame.
             for (; next < count; ++next)
@@ -100,6 +102,7 @@ protected:
             right[frame] = static_cast<float>(level.load(std::memory_order_relaxed)
                                               + globalModulation);
         }
+        outEvents = nullptr;
         return CLAP_PROCESS_CONTINUE;
     }
 
@@ -276,10 +279,26 @@ private:
         return 1.0;
     }
 
+    // Ends every matching voice and sends NOTE_END for each with the address
+    // its note-on gave.
     double noteOff(int32_t noteId, int16_t port, int16_t channel, int16_t key) noexcept
     {
         for (auto& voice : voices)
-            if (matches(voice, noteId, port, channel, key)) voice = {};
+        {
+            if (!matches(voice, noteId, port, channel, key)) continue;
+            if (outEvents)
+            {
+                clap_event_note_t end {};
+                end.header = { sizeof(end), eventFrame, CLAP_CORE_EVENT_SPACE_ID,
+                               CLAP_EVENT_NOTE_END, 0 };
+                end.note_id = voice.noteId;
+                end.port_index = voice.port;
+                end.channel = voice.channel;
+                end.key = voice.key;
+                outEvents->try_push(outEvents, &end.header);
+            }
+            voice = {};
+        }
         updateVoiceSum();
         return -1.0;
     }
@@ -295,6 +314,8 @@ private:
     std::array<Voice, maxVoices> voices {};
     double voiceSum = 0.0;
     double globalModulation = 0.0;
+    const clap_output_events_t* outEvents = nullptr;
+    uint32_t eventFrame = 0;
 };
 
 uint32_t pluginCount(const clap_plugin_factory_t*) { return 1; }

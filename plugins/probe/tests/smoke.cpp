@@ -100,6 +100,22 @@ struct EventList
     }
 };
 
+struct OutputList
+{
+    std::vector<clap_event_note_t> ends;
+    clap_output_events_t events { this, push };
+
+    static bool push(const clap_output_events_t* events, const clap_event_header_t* header)
+    {
+        if (header->space_id != CLAP_CORE_EVENT_SPACE_ID || header->type != CLAP_EVENT_NOTE_END
+            || header->size != sizeof(clap_event_note_t))
+            throw std::runtime_error("unexpected output event");
+        static_cast<OutputList*>(events->ctx)->ends.push_back(
+            *reinterpret_cast<const clap_event_note_t*>(header));
+        return true;
+    }
+};
+
 struct Block
 {
     std::array<float, blockSize> left {};
@@ -109,12 +125,14 @@ struct Block
     std::array<float*, 2> inputChannels { ignored.data(), ignored.data() };
     clap_audio_buffer_t output { outputChannels.data(), nullptr, 2, 0, 0 };
     clap_audio_buffer_t input { inputChannels.data(), nullptr, 2, 0, 0 };
+    OutputList out;
 
     clap_process_status run(const clap_plugin_t* plugin, EventList& events, int64_t steadyTime)
     {
         left.fill(-9.0f);
         right.fill(-9.0f);
         ignored.fill(0.7f);
+        out.ends.clear();
         clap_process_t process {};
         process.steady_time = steadyTime;
         process.frames_count = blockSize;
@@ -123,6 +141,7 @@ struct Block
         process.audio_outputs = &output;
         process.audio_outputs_count = 1;
         process.in_events = &events.events;
+        process.out_events = &out.events;
         return plugin->process(plugin, &process);
     }
 };
@@ -201,6 +220,8 @@ void runSmoke()
     events.note(36, CLAP_EVENT_NOTE_CHOKE, 8, 62);
     events.midi(40, 0x91, 64, 100);
     events.midi(44, 0x91, 64, 0);
+    events.midi(46, 0x92, 67, 100);
+    events.midi(47, 0x82, 67, 0);
     events.note(48, CLAP_EVENT_NOTE_ON, 9, -1);
     events.value(52, 0.875, 7);
     events.mod(56, 0.0);
@@ -224,13 +245,34 @@ void runSmoke()
     expect(block.left, 40, 41, 1.0f, "MIDI note-on click");
     expect(block.left, 41, 44, 0.0f, "left after MIDI note-on");
     expect(block.left, 44, 45, -1.0f, "MIDI velocity-0 note-off click");
-    expect(block.left, 45, 127, 0.0f, "invalid note-on ignored");
+    expect(block.left, 45, 46, 0.0f, "left after MIDI note-off");
+    expect(block.left, 46, 47, 1.0f, "second MIDI note-on click");
+    expect(block.left, 47, 48, -1.0f, "MIDI note-off click");
+    expect(block.left, 48, 127, 0.0f, "invalid note-on ignored");
     expect(block.left, 127, 128, 1.0f, "late note-on on last frame");
 
     expect(block.right, 0, 8, 0.0f, "default level");
     expect(block.right, 8, 12, 0.5f, "level 0.5");
     expect(block.right, 12, 56, 0.75f, "level plus global modulation");
     expect(block.right, 56, 128, 0.5f, "global modulation cleared");
+
+    struct End { uint32_t time; int32_t noteId; int16_t channel; int16_t key; };
+    const std::vector<End> expectedEnds {
+        { 32, 7, 0, 60 }, { 36, 8, 0, 62 }, { 44, -1, 1, 64 }, { 47, -1, 2, 67 }
+    };
+    require(block.out.ends.size() == expectedEnds.size(),
+            "NOTE_END count is " + std::to_string(block.out.ends.size()));
+    for (size_t index = 0; index < expectedEnds.size(); ++index)
+    {
+        const auto& actual = block.out.ends[index];
+        const auto& expected = expectedEnds[index];
+        require(actual.header.time == expected.time && actual.note_id == expected.noteId
+                    && actual.port_index == 0 && actual.channel == expected.channel
+                    && actual.key == expected.key,
+                "NOTE_END " + std::to_string(index) + " mismatch: time "
+                    + std::to_string(actual.header.time) + ", note ID "
+                    + std::to_string(actual.note_id) + ", key " + std::to_string(actual.key));
+    }
 
     double value = -1.0;
     require(params->get_value(plugin, levelParamId, &value) && value == 0.5,
@@ -249,6 +291,7 @@ void runSmoke()
     require(block.run(plugin, none, blockSize) == CLAP_PROCESS_CONTINUE, "status mismatch");
     expect(block.right, 0, blockSize, 0.375f, "flushed level and modulation");
     expect(block.left, 0, blockSize, 0.0f, "left with one unmodulated voice");
+    require(block.out.ends.empty(), "NOTE_END sent with no note-off");
 
     char text[32] {};
     require(params->value_to_text(plugin, levelParamId, 0.5, text, sizeof(text))
