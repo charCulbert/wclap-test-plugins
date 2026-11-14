@@ -41,8 +41,15 @@ clap_event_header_t header(uint32_t time, uint16_t type, uint32_t size)
     return { size, time, CLAP_CORE_EVENT_SPACE_ID, type, 0 };
 }
 
+enum class Dialect
+{
+    clap,
+    midi
+};
+
 struct EventList
 {
+    Dialect dialect = Dialect::clap;
     std::vector<AnyEvent> list;
     clap_input_events_t events { this, size, get };
 
@@ -64,6 +71,23 @@ struct EventList
         event.note = { header(time, type, sizeof(clap_event_note_t)), noteId, port, channel,
                        key, 1.0 };
         list.push_back(event);
+    }
+
+    // A note-on or note-off in the list's dialect. MIDI has no note ID.
+    void noteOn(uint32_t time, int32_t noteId, int16_t key, int16_t channel = 0)
+    {
+        if (dialect == Dialect::midi)
+            midi(time, static_cast<uint8_t>(0x90 | channel), static_cast<uint8_t>(key), 100);
+        else
+            note(time, CLAP_EVENT_NOTE_ON, noteId, key, channel);
+    }
+
+    void noteOff(uint32_t time, int16_t key, int16_t channel = 0)
+    {
+        if (dialect == Dialect::midi)
+            midi(time, static_cast<uint8_t>(0x80 | channel), static_cast<uint8_t>(key), 0);
+        else
+            note(time, CLAP_EVENT_NOTE_OFF, -1, key, channel);
     }
 
     void midi(uint32_t time, uint8_t status, uint8_t key, uint8_t velocity)
@@ -161,6 +185,157 @@ void expect(const std::array<float, blockSize>& samples, uint32_t from, uint32_t
                     + std::to_string(expected));
 }
 
+struct End
+{
+    uint32_t time;
+    int32_t noteId;
+    int16_t channel;
+    int16_t key;
+};
+
+void expectEnds(const OutputList& out, const std::vector<End>& expected, const std::string& what)
+{
+    require(out.ends.size() == expected.size(),
+            what + ": NOTE_END count is " + std::to_string(out.ends.size()));
+    for (size_t index = 0; index < expected.size(); ++index)
+    {
+        const auto& actual = out.ends[index];
+        require(actual.header.time == expected[index].time
+                    && actual.note_id == expected[index].noteId && actual.port_index == 0
+                    && actual.channel == expected[index].channel
+                    && actual.key == expected[index].key,
+                what + ": NOTE_END " + std::to_string(index) + " mismatch: time "
+                    + std::to_string(actual.header.time) + ", note ID "
+                    + std::to_string(actual.note_id) + ", key " + std::to_string(actual.key));
+    }
+}
+
+// The README's validation protocol, with note-ons and note-offs in one dialect.
+// Everything but the NOTE_END note IDs is the same in both.
+void runProtocol(const clap_plugin_t* plugin, const clap_plugin_params_t* params, Dialect dialect)
+{
+    const std::string name = dialect == Dialect::midi ? "MIDI notes" : "CLAP notes";
+    const auto id = [dialect](int32_t noteId) { return dialect == Dialect::midi ? -1 : noteId; };
+
+    double value = -1.0;
+    {
+        EventList reset;
+        reset.value(0, 0.0);
+        params->flush(plugin, &reset.events, nullptr);
+    }
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), name + ": activate failed");
+    require(plugin->start_processing(plugin), name + ": start processing failed");
+
+    EventList events;
+    events.dialect = dialect;
+    events.noteOn(4, 7, 60);
+    events.value(8, 0.5);
+    events.mod(12, 0.25);
+    events.noteOn(16, 8, 62);
+    events.mod(20, 0.5, -1, 60);
+    events.tuning(24, 12.0, -1, 62);
+    events.tuning(28, 32.0, -1);
+    events.noteOff(32, 60);
+    events.note(36, CLAP_EVENT_NOTE_CHOKE, -1, 62);
+    events.noteOn(40, 11, 64, 1);
+    events.noteOff(44, 64, 1);
+    events.noteOn(46, 12, 67, 2);
+    events.noteOff(47, 67, 2);
+    // Not sent by a correct host: a note-on with key -1, a value addressed to
+    // a voice (not advertised), and an event past the block.
+    events.note(48, CLAP_EVENT_NOTE_ON, 9, -1);
+    events.value(52, 0.875, 7);
+    events.mod(56, 0.0);
+    events.note(200, CLAP_EVENT_NOTE_ON, 10, 65);
+
+    Block block;
+    require(block.run(plugin, events, 0) == CLAP_PROCESS_CONTINUE, name + ": status mismatch");
+
+    expect(block.left, 0, 4, 0.0f, "left before first note");
+    expect(block.left, 4, 5, 1.0f, "note-on click");
+    expect(block.left, 5, 16, 0.0f, "left with an unmodulated voice");
+    expect(block.left, 16, 17, 1.0f, "second note-on click");
+    expect(block.left, 17, 20, 0.0f, "left with unmodulated voices");
+    expect(block.left, 20, 24, 0.5f, "per-voice modulation on key 60");
+    expect(block.left, 24, 28, 0.59375f, "tuning 12 on key 62");
+    expect(block.left, 28, 32, 1.0f, "wildcard tuning 32 on both voices");
+    expect(block.left, 32, 33, -0.75f, "note-off click on remaining voice sum");
+    expect(block.left, 33, 36, 0.25f, "note-off ended key 60");
+    expect(block.left, 36, 37, -1.0f, "choke click");
+    expect(block.left, 37, 40, 0.0f, "choke ended key 62");
+    expect(block.left, 40, 41, 1.0f, "channel 1 note-on click");
+    expect(block.left, 41, 44, 0.0f, "left after channel 1 note-on");
+    expect(block.left, 44, 45, -1.0f, "channel 1 note-off click");
+    expect(block.left, 45, 46, 0.0f, "left after channel 1 note-off");
+    expect(block.left, 46, 47, 1.0f, "channel 2 note-on click");
+    expect(block.left, 47, 48, -1.0f, "channel 2 note-off click");
+    expect(block.left, 48, 127, 0.0f, "invalid note-on ignored");
+    expect(block.left, 127, 128, 1.0f, "late note-on on last frame");
+
+    expect(block.right, 0, 8, 0.0f, "default level");
+    expect(block.right, 8, 12, 0.5f, "level 0.5");
+    expect(block.right, 12, 56, 0.75f, "level plus global modulation");
+    expect(block.right, 56, 128, 0.5f, "global modulation cleared");
+
+    expectEnds(block.out,
+               { { 32, id(7), 0, 60 }, { 36, id(8), 0, 62 }, { 44, id(11), 1, 64 },
+                 { 47, id(12), 2, 67 } },
+               name);
+
+    require(params->get_value(plugin, levelParamId, &value) && value == 0.5,
+            name + ": get_value does not report the processed level");
+
+    plugin->stop_processing(plugin);
+    EventList flush;
+    flush.value(0, 0.25);
+    flush.mod(0, 0.125);
+    params->flush(plugin, &flush.events, nullptr);
+    require(params->get_value(plugin, levelParamId, &value) && value == 0.25,
+            name + ": flush did not apply the level");
+
+    require(plugin->start_processing(plugin), name + ": restart processing failed");
+    EventList none;
+    require(block.run(plugin, none, blockSize) == CLAP_PROCESS_CONTINUE,
+            name + ": status mismatch");
+    expect(block.right, 0, blockSize, 0.375f, "flushed level and modulation");
+    expect(block.left, 0, blockSize, 0.0f, "left with one unmodulated voice");
+    require(block.out.ends.empty(), name + ": NOTE_END sent with no note-off");
+
+    plugin->stop_processing(plugin);
+    plugin->deactivate(plugin);
+}
+
+// NOTE_END order follows note-on order even when a voice slot is reused, and a
+// note-on with no free voice ends at once.
+void runVoiceChecks(const clap_plugin_t* plugin)
+{
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), "activate failed");
+    require(plugin->start_processing(plugin), "start processing failed");
+
+    Block block;
+    EventList reuse;
+    reuse.note(0, CLAP_EVENT_NOTE_ON, 1, 60);
+    reuse.note(1, CLAP_EVENT_NOTE_ON, 2, 61);
+    reuse.note(2, CLAP_EVENT_NOTE_OFF, 1, 60);
+    reuse.note(3, CLAP_EVENT_NOTE_ON, 3, 62); // takes the first voice slot back
+    reuse.note(4, CLAP_EVENT_NOTE_OFF, -1, -1);
+    require(block.run(plugin, reuse, 0) == CLAP_PROCESS_CONTINUE, "status mismatch");
+    expectEnds(block.out, { { 2, 1, 0, 60 }, { 4, 2, 0, 61 }, { 4, 3, 0, 62 } },
+               "slot reuse");
+
+    EventList full;
+    for (int16_t key = 0; key < 65; ++key) full.note(key, CLAP_EVENT_NOTE_ON, key, key);
+    full.note(100, CLAP_EVENT_NOTE_OFF, -1, -1);
+    require(block.run(plugin, full, blockSize) == CLAP_PROCESS_CONTINUE, "status mismatch");
+    std::vector<End> ends { { 64, 64, 0, 64 } };
+    for (int16_t key = 0; key < 64; ++key) ends.push_back({ 100, key, 0, key });
+    expectEnds(block.out, ends, "no free voice");
+    expect(block.left, 64, 65, 1.0f, "note-on with no free voice still clicks");
+
+    plugin->stop_processing(plugin);
+    plugin->deactivate(plugin);
+}
+
 void runSmoke()
 {
     const clap_host_t host {
@@ -202,104 +377,20 @@ void runSmoke()
                 && paramInfo.max_value == 1.0 && paramInfo.default_value == 0.0,
             "parameter info mismatch");
     const auto modFlags = CLAP_PARAM_IS_MODULATABLE | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID
-        | CLAP_PARAM_IS_MODULATABLE_PER_KEY;
-    require((paramInfo.flags & modFlags) == modFlags, "parameter is not modulatable per voice");
+        | CLAP_PARAM_IS_MODULATABLE_PER_KEY | CLAP_PARAM_REQUIRES_PROCESS;
+    require((paramInfo.flags & modFlags) == modFlags, "parameter flags mismatch");
 
-    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), "activate failed");
-    require(plugin->start_processing(plugin), "start processing failed");
-
-    EventList events;
-    events.note(4, CLAP_EVENT_NOTE_ON, 7, 60);
-    events.value(8, 0.5);
-    events.mod(12, 0.25);
-    events.note(16, CLAP_EVENT_NOTE_ON, 8, 62);
-    events.mod(20, 0.5, 7);
-    events.tuning(24, 12.0, 8);
-    events.tuning(28, 32.0, -1);
-    events.note(32, CLAP_EVENT_NOTE_OFF, -1, 60);
-    events.note(36, CLAP_EVENT_NOTE_CHOKE, 8, 62);
-    events.midi(40, 0x91, 64, 100);
-    events.midi(44, 0x91, 64, 0);
-    events.midi(46, 0x92, 67, 100);
-    events.midi(47, 0x82, 67, 0);
-    events.note(48, CLAP_EVENT_NOTE_ON, 9, -1);
-    events.value(52, 0.875, 7);
-    events.mod(56, 0.0);
-    events.note(200, CLAP_EVENT_NOTE_ON, 10, 65);
-
-    Block block;
-    require(block.run(plugin, events, 0) == CLAP_PROCESS_CONTINUE, "status mismatch");
-
-    expect(block.left, 0, 4, 0.0f, "left before first note");
-    expect(block.left, 4, 5, 1.0f, "note-on click");
-    expect(block.left, 5, 16, 0.0f, "left with an unmodulated voice");
-    expect(block.left, 16, 17, 1.0f, "second note-on click");
-    expect(block.left, 17, 20, 0.0f, "left with unmodulated voices");
-    expect(block.left, 20, 24, 0.5f, "per-voice modulation on note 7");
-    expect(block.left, 24, 28, 0.59375f, "tuning 12 on note 8");
-    expect(block.left, 28, 32, 1.0f, "wildcard tuning 32 on both voices");
-    expect(block.left, 32, 33, -0.75f, "note-off click on remaining voice sum");
-    expect(block.left, 33, 36, 0.25f, "wildcard-id note-off ended note 7");
-    expect(block.left, 36, 37, -1.0f, "choke click");
-    expect(block.left, 37, 40, 0.0f, "choke ended note 8");
-    expect(block.left, 40, 41, 1.0f, "MIDI note-on click");
-    expect(block.left, 41, 44, 0.0f, "left after MIDI note-on");
-    expect(block.left, 44, 45, -1.0f, "MIDI velocity-0 note-off click");
-    expect(block.left, 45, 46, 0.0f, "left after MIDI note-off");
-    expect(block.left, 46, 47, 1.0f, "second MIDI note-on click");
-    expect(block.left, 47, 48, -1.0f, "MIDI note-off click");
-    expect(block.left, 48, 127, 0.0f, "invalid note-on ignored");
-    expect(block.left, 127, 128, 1.0f, "late note-on on last frame");
-
-    expect(block.right, 0, 8, 0.0f, "default level");
-    expect(block.right, 8, 12, 0.5f, "level 0.5");
-    expect(block.right, 12, 56, 0.75f, "level plus global modulation");
-    expect(block.right, 56, 128, 0.5f, "global modulation cleared");
-
-    struct End { uint32_t time; int32_t noteId; int16_t channel; int16_t key; };
-    const std::vector<End> expectedEnds {
-        { 32, 7, 0, 60 }, { 36, 8, 0, 62 }, { 44, -1, 1, 64 }, { 47, -1, 2, 67 }
-    };
-    require(block.out.ends.size() == expectedEnds.size(),
-            "NOTE_END count is " + std::to_string(block.out.ends.size()));
-    for (size_t index = 0; index < expectedEnds.size(); ++index)
-    {
-        const auto& actual = block.out.ends[index];
-        const auto& expected = expectedEnds[index];
-        require(actual.header.time == expected.time && actual.note_id == expected.noteId
-                    && actual.port_index == 0 && actual.channel == expected.channel
-                    && actual.key == expected.key,
-                "NOTE_END " + std::to_string(index) + " mismatch: time "
-                    + std::to_string(actual.header.time) + ", note ID "
-                    + std::to_string(actual.note_id) + ", key " + std::to_string(actual.key));
-    }
+    // The note port takes both dialects, so the host may send either.
+    runProtocol(plugin, params, Dialect::clap);
+    runProtocol(plugin, params, Dialect::midi);
+    runVoiceChecks(plugin);
 
     double value = -1.0;
-    require(params->get_value(plugin, levelParamId, &value) && value == 0.5,
-            "get_value does not report the processed level");
-
-    plugin->stop_processing(plugin);
-    EventList flush;
-    flush.value(0, 0.25);
-    flush.mod(0, 0.125);
-    params->flush(plugin, &flush.events, nullptr);
-    require(params->get_value(plugin, levelParamId, &value) && value == 0.25,
-            "flush did not apply the level");
-
-    require(plugin->start_processing(plugin), "restart processing failed");
-    EventList none;
-    require(block.run(plugin, none, blockSize) == CLAP_PROCESS_CONTINUE, "status mismatch");
-    expect(block.right, 0, blockSize, 0.375f, "flushed level and modulation");
-    expect(block.left, 0, blockSize, 0.0f, "left with one unmodulated voice");
-    require(block.out.ends.empty(), "NOTE_END sent with no note-off");
-
     char text[32] {};
     require(params->value_to_text(plugin, levelParamId, 0.5, text, sizeof(text))
                 && params->text_to_value(plugin, levelParamId, text, &value) && value == 0.5,
             "text round trip failed");
 
-    plugin->stop_processing(plugin);
-    plugin->deactivate(plugin);
     plugin->destroy(plugin);
     clap_entry.deinit();
 }

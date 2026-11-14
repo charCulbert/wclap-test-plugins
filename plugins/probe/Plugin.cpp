@@ -23,6 +23,7 @@ constexpr size_t maxVoices = 64;
 struct Voice
 {
     bool active = false;
+    uint64_t started = 0; // start order, for NOTE_END order
     int32_t noteId = -1;
     int16_t port = -1;
     int16_t channel = -1;
@@ -60,17 +61,11 @@ public:
 protected:
     bool activate(double, uint32_t, uint32_t) noexcept override
     {
-        reset();
+        clear();
         return true;
     }
     bool startProcessing() noexcept override { return true; }
-
-    void reset() noexcept override
-    {
-        voices = {};
-        voiceSum = 0.0;
-        globalModulation = 0.0;
-    }
+    void reset() noexcept override { clear(); }
 
     clap_process_status process(const clap_process_t* process) noexcept override
     {
@@ -149,7 +144,8 @@ protected:
         info->id = levelParamId;
         info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE
             | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID | CLAP_PARAM_IS_MODULATABLE_PER_KEY
-            | CLAP_PARAM_IS_MODULATABLE_PER_CHANNEL | CLAP_PARAM_IS_MODULATABLE_PER_PORT;
+            | CLAP_PARAM_IS_MODULATABLE_PER_CHANNEL | CLAP_PARAM_IS_MODULATABLE_PER_PORT
+            | CLAP_PARAM_REQUIRES_PROCESS;
         std::snprintf(info->name, sizeof(info->name), "Level");
         info->min_value = 0.0;
         info->max_value = 1.0;
@@ -194,6 +190,13 @@ protected:
     }
 
 private:
+    void clear() noexcept
+    {
+        voices = {};
+        voiceSum = 0.0;
+        globalModulation = 0.0;
+    }
+
     // Applies one event and returns the click it writes on its frame.
     double apply(const clap_event_header_t* header) noexcept
     {
@@ -271,36 +274,49 @@ private:
         if (port < 0 || channel < 0 || key < 0) return 0.0;
         const auto free = std::find_if(voices.begin(), voices.end(),
                                        [](const Voice& voice) { return !voice.active; });
-        if (free != voices.end())
+        const Voice voice { true, ++startCount, noteId, port, channel, key, 0.0, 0.0 };
+        if (free == voices.end())
         {
-            *free = Voice { true, noteId, port, channel, key, 0.0, 0.0 };
-            updateVoiceSum();
+            // The host keeps a voice for every note-on until NOTE_END
+            // (events.h), so a note with no voice ends at once.
+            sendNoteEnd(voice);
+            return 1.0;
         }
+        *free = voice;
+        updateVoiceSum();
         return 1.0;
     }
 
     // Ends every matching voice and sends NOTE_END for each with the address
-    // its note-on gave.
+    // its note-on gave, in the order the voices started.
     double noteOff(int32_t noteId, int16_t port, int16_t channel, int16_t key) noexcept
     {
+        std::array<Voice*, maxVoices> ended {};
+        size_t count = 0;
         for (auto& voice : voices)
+            if (matches(voice, noteId, port, channel, key)) ended[count++] = &voice;
+        std::sort(ended.begin(), ended.begin() + count,
+                  [](const Voice* a, const Voice* b) { return a->started < b->started; });
+        for (size_t index = 0; index < count; ++index)
         {
-            if (!matches(voice, noteId, port, channel, key)) continue;
-            if (outEvents)
-            {
-                clap_event_note_t end {};
-                end.header = { sizeof(end), eventFrame, CLAP_CORE_EVENT_SPACE_ID,
-                               CLAP_EVENT_NOTE_END, 0 };
-                end.note_id = voice.noteId;
-                end.port_index = voice.port;
-                end.channel = voice.channel;
-                end.key = voice.key;
-                outEvents->try_push(outEvents, &end.header);
-            }
-            voice = {};
+            sendNoteEnd(*ended[index]);
+            *ended[index] = {};
         }
         updateVoiceSum();
         return -1.0;
+    }
+
+    void sendNoteEnd(const Voice& voice) noexcept
+    {
+        if (!outEvents) return;
+        clap_event_note_t end {};
+        end.header = { sizeof(end), eventFrame, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_END,
+                       0 };
+        end.note_id = voice.noteId;
+        end.port_index = voice.port;
+        end.channel = voice.channel;
+        end.key = voice.key;
+        outEvents->try_push(outEvents, &end.header);
     }
 
     void updateVoiceSum() noexcept
@@ -312,6 +328,7 @@ private:
 
     std::atomic<double> level { 0.0 };
     std::array<Voice, maxVoices> voices {};
+    uint64_t startCount = 0;
     double voiceSum = 0.0;
     double globalModulation = 0.0;
     const clap_output_events_t* outEvents = nullptr;
