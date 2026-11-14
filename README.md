@@ -13,6 +13,7 @@ identical code.
 | [`note-ids`](plugins/note-ids/README.md) | The host passes its note IDs through to the plug-in, ends notes by ID, key, or a wildcard (`-1`) that matches every voice on a key, delivers note chokes, and receives `CLAP_EVENT_NOTE_END` with the address of the note-on. |
 | [`probe`](plugins/probe/README.md) | The host delivers note, parameter, modulation and note-expression events on their exact frame, with their exact values, to the right voices. |
 | [`process-lifecycle`](plugins/process-lifecycle/README.md) | The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances `steady_time` across skipped blocks, and reports finite and infinite tails (how long a plug-in keeps sounding after its input stops). |
+| [`render`](plugins/render/README.md) | The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
 
 Each plug-in's README says what a correct host does with it: load it, reject it, or contain it (stop processing it
 safely; see process-lifecycle's README).
