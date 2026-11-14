@@ -70,7 +70,7 @@ the block's own message, so the first block already shows `1, 0`.
 
 | Step | Host action | Expected |
 | ---: | --- | --- |
-| 1 | Load, activate and render one block | Message 1 taken; output `1, 0` |
+| 1 | Load (with `clap.log`), activate and render one block | Message 1 taken; output `1, 0` |
 | 2 | Service the main-thread callback | Messages 2 to 7 taken, in order |
 | 3 | Render another block (recommended: a host may stop after `FATAL`) | Output `7, 6` |
 
