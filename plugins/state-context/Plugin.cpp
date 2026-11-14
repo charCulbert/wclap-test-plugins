@@ -14,9 +14,11 @@ namespace
 {
 
 constexpr char pluginId[] = TEST_PLUGIN_ID;
-constexpr uint32_t stateMagic = 0x57545343; // "WTSC"
+// Stored little-endian, so the first four bytes read "CSTW".
+constexpr uint32_t stateMagic = 0x57545343;
 constexpr uint32_t stateVersion = 1;
-// state.save and state.load have no context; the plug-in records them as 0.
+// state.save and state.load have no context; the plug-in records them as 0,
+// and treats a context it does not know the same way.
 constexpr uint32_t plainState = 0;
 
 // The whole saved state: which call saved it.
@@ -27,10 +29,17 @@ struct State
     uint32_t savedFor;
 };
 
-bool validContext(uint32_t context) noexcept
+bool knownContext(uint32_t context) noexcept
 {
     return context == CLAP_STATE_CONTEXT_FOR_PRESET || context == CLAP_STATE_CONTEXT_FOR_DUPLICATE
         || context == CLAP_STATE_CONTEXT_FOR_PROJECT;
+}
+
+// A context added after this plug-in was built is handled as plain state, the
+// fallback state-context.h recommends.
+uint32_t recorded(uint32_t context) noexcept
+{
+    return knownContext(context) ? context : plainState;
 }
 
 class StateContextPlugin final
@@ -92,11 +101,11 @@ protected:
     bool implementsStateContext() const noexcept override { return true; }
     bool stateContextSave(const clap_ostream_t* stream, uint32_t context) noexcept override
     {
-        return validContext(context) && save(stream, context);
+        return save(stream, recorded(context));
     }
     bool stateContextLoad(const clap_istream_t* stream, uint32_t context) noexcept override
     {
-        return validContext(context) && load(stream, context);
+        return load(stream, recorded(context));
     }
 
 private:
@@ -129,7 +138,7 @@ private:
         uint8_t extra = 0;
         if (stream->read(stream, &extra, 1) > 0) return false;
         if (state.magic != stateMagic || state.version != stateVersion
-            || (state.savedFor != plainState && !validContext(state.savedFor)))
+            || (state.savedFor != plainState && !knownContext(state.savedFor)))
             return false;
         loadedSavedFor.store(static_cast<int32_t>(state.savedFor), std::memory_order_relaxed);
         loadedWith.store(static_cast<int32_t>(context), std::memory_order_relaxed);

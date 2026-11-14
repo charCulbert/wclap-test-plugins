@@ -132,8 +132,10 @@ void runSmoke()
                 "state_context.save failed for context " + std::to_string(kind));
         saved[kind] = writer.bytes;
     }
-    Writer rejected;
-    require(!context->save(plugin, &rejected.stream, 9), "saved for an unknown context");
+    // A context this plug-in does not know is saved as plain state.
+    Writer future;
+    require(context->save(plugin, &future.stream, 9) && future.bytes == saved[0],
+            "a save for an unknown context did not write plain state");
 
     // Loading never changes what a save writes, so every pair is checked.
     for (uint32_t from = 0; from < saved.size(); ++from)
@@ -151,8 +153,6 @@ void runSmoke()
         }
     }
 
-    Reader unknown(saved[1]);
-    require(!context->load(plugin, &unknown.stream, 9), "loaded with an unknown context");
     Bytes garbage(saved[1].size(), 0x5a);
     Reader junk(garbage);
     require(!state->load(plugin, &junk.stream), "loaded junk");
@@ -160,7 +160,24 @@ void runSmoke()
     longer.push_back(0);
     Reader tooLong(longer);
     require(!state->load(plugin, &tooLong.stream), "loaded a state with trailing bytes");
+    Bytes shorter(saved[1].begin(), saved[1].end() - 1);
+    Reader tooShort(shorter);
+    require(!state->load(plugin, &tooShort.stream), "loaded a short state");
+    Bytes newer = saved[1];
+    newer[4] = 2; // version 2
+    Reader wrongVersion(newer);
+    require(!state->load(plugin, &wrongVersion.stream), "loaded a state of another version");
+    Bytes strange = saved[1];
+    strange[8] = 7; // saved for context 7
+    Reader unknownSavedFor(strange);
+    require(!state->load(plugin, &unknownSavedFor.stream),
+            "loaded a state with an unknown saved-for value");
     expectOutput(plugin, 3.0f, 3.0f, "rejected loads change nothing");
+
+    // A context this plug-in does not know is loaded as plain state.
+    Reader unknown(saved[1]);
+    require(context->load(plugin, &unknown.stream, 9), "load with an unknown context failed");
+    expectOutput(plugin, 1.0f, 0.0f, "unknown context loads as plain state");
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
