@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -121,6 +122,10 @@ void runSmoke()
             "uri mismatch");
     require(webview->get_uri(plugin, nullptr, 0) == static_cast<int32_t>(sizeof("/ui/index.html")),
             "uri length mismatch");
+
+    // The file itself must be readable from the test, or a failure below says nothing about get_resource.
+    const auto message = resources + "/ui/message.txt";
+    require(std::ifstream(message, std::ios::binary).good(), "cannot open " + message);
 
     SlowStream page;
     char mime[64] {};
