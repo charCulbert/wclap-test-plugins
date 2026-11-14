@@ -61,7 +61,8 @@ without sending `NOTE_END`. There are 64 voices and none is ever stolen. A note-
 encoded ID on the left, starts no voice, and ends at once:
 the right channel shows its encoded ID on the same frame and it gets its `NOTE_END` there. The host keeps a voice for
 every note-on until the plug-in sends `NOTE_END` ([`events.h`](../../external/clap/include/clap/events.h), comment
-above `CLAP_EVENT_NOTE_ON`), so every note-on gets one.
+above `CLAP_EVENT_NOTE_ON`), so every note-on that reaches a voice slot, or finds none free, gets one;
+activating or resetting ends voices without one, as above.
 
 ## Validation protocol
 
