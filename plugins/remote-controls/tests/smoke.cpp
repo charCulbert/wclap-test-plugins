@@ -198,8 +198,8 @@ void runSmoke()
     require(callbackRequests == 1, "request_callback count is " + std::to_string(callbackRequests));
 
     plugin->on_main_thread(plugin);
-    require(pagesChanged == 1 && suggested == std::vector<clap_id> { 2 },
-            "changed and suggest_page(2) not called once");
+    require(pagesChanged == 1 && suggested == std::vector<clap_id> { 1 },
+            "changed and suggest_page(1) not called once");
     plugin->on_main_thread(plugin);
     require(pagesChanged == 1, "changed called again with no change");
     require(readPages(plugin, controls) == "1:Main:device:3210;2:Preset:preset:23;",
@@ -214,7 +214,7 @@ void runSmoke()
     expect(block.left, 6, blockSize, 3.0f, "parameter 2 set");
     expect(block.right, 0, blockSize, 2.0f, "two page reads");
     plugin->on_main_thread(plugin);
-    require(pagesChanged == 2 && suggested == std::vector<clap_id> { 2, 1 },
+    require(pagesChanged == 2 && suggested == std::vector<clap_id> { 1, 1 },
             "changed and suggest_page(1) not called for the change back");
 
     double value = -1.0;

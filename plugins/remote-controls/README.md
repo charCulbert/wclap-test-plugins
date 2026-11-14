@@ -65,7 +65,7 @@ a different count and still be correct. Both channels are written on every frame
 | Event | Effect |
 | --- | --- |
 | `CLAP_EVENT_PARAM_VALUE`, parameter 0 to 3 | Sets the parameter (also read back by `params.get_value`) and the left channel, from the event's frame on |
-| MIDI program change (`0xCn p`), any channel | Selects layout 0 if `p` is 0, layout 1 otherwise. If the layout changes, the plug-in calls `host.request_callback`, then in `on_main_thread` calls `remote_controls.changed` and `suggest_page`: page 2 for layout 1, page 1 for layout 0. |
+| MIDI program change (`0xCn p`), any channel | Selects layout 0 if `p` is 0, layout 1 otherwise. If the layout changes, the plug-in calls `host.request_callback`, then in `on_main_thread` calls `remote_controls.changed` and `suggest_page(1)`, page `Main`, the page that changed. |
 | Any other event | Ignored |
 
 `params.flush` applies parameter values the same way and ignores any other event, including a program change: flush
@@ -81,9 +81,9 @@ The plug-in looks up the host's `clap.remote-controls` extension, and falls back
 | ---: | --- | --- |
 | 1 | Load and activate; read the pages | Layout 0 pages |
 | 2 | Turn the control at index 1 of page `Main` | Left `2` from that frame on |
-| 3 | Send MIDI `0xC0 1` (the host must be able to send MIDI) | One `request_callback`; then `changed` and `suggest_page(2)` from `on_main_thread` |
+| 3 | Send MIDI `0xC0 1` (the host must be able to send MIDI) | One `request_callback`; then `changed` and `suggest_page(1)` from `on_main_thread` |
 | 4 | Read the pages again (or let the host's own `changed` handling do it), then render a block | Layout 1 pages |
 | 5 | Turn the control at index 1 of page `Main` | Left `3` |
 
 The read count on the right channel is a diagnostic, not a pass/fail check: a host that reads the pages from index 0
-shows it rise after steps 1 and 4. Whether the host shows page `Preset` after `suggest_page(2)` is its own choice.
+shows it rise after steps 1 and 4. Whether the host shows page `Main` after `suggest_page(1)` is its own choice.

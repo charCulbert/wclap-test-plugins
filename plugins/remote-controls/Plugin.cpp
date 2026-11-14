@@ -81,8 +81,8 @@ protected:
         if (!changePending.exchange(false, std::memory_order_acq_rel) || !hostRemoteControls)
             return;
         hostRemoteControls->changed(host);
-        hostRemoteControls->suggest_page(
-            host, layout.load(std::memory_order_relaxed) == 0 ? mainPageId : presetPageId);
+        // Main is the page a layout change rewrites.
+        hostRemoteControls->suggest_page(host, mainPageId);
     }
 
     bool implementsAudioPorts() const noexcept override { return true; }
