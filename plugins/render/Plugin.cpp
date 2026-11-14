@@ -58,15 +58,27 @@ protected:
         return true;
     }
 
-    bool implementsRender() const noexcept override { return true; }
-    bool renderHasHardRealtimeRequirement() noexcept override { return false; }
-    bool renderSetMode(clap_plugin_render_mode newMode) noexcept override
+    // clap.render is served here rather than through clap-helpers, which ends
+    // the process on a mode it does not know. render.h: set returns whether
+    // the mode could be applied, so an unknown mode returns false.
+    const void* extension(const char* id) noexcept override
     {
-        mode.store(newMode, std::memory_order_relaxed);
-        return true;
+        static const clap_plugin_render_t render { hasHardRealtimeRequirement, setMode };
+        return id && std::strcmp(id, CLAP_EXT_RENDER) == 0 ? &render : nullptr;
     }
 
 private:
+    static bool hasHardRealtimeRequirement(const clap_plugin_t*) noexcept { return false; }
+
+    static bool setMode(const clap_plugin_t* plugin, clap_plugin_render_mode newMode) noexcept
+    {
+        if (!plugin || !plugin->plugin_data) return false;
+        if (newMode != CLAP_RENDER_REALTIME && newMode != CLAP_RENDER_OFFLINE) return false;
+        auto& self = *static_cast<RenderPlugin*>(static_cast<Base*>(plugin->plugin_data));
+        self.mode.store(newMode, std::memory_order_relaxed);
+        return true;
+    }
+
     std::atomic<int32_t> mode { CLAP_RENDER_REALTIME };
 };
 

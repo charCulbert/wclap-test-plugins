@@ -14,11 +14,12 @@ The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster 
 
 ## A correct host
 
-**Loads** the plug-in. Before an offline render (an export, or any render not tied to an audio device's clock) it sets
-`CLAP_RENDER_OFFLINE`, and the output reads `2`. When it plays in real time again it sets `CLAP_RENDER_REALTIME`, and
-the output reads `1`. A host that never calls `render.set` renders `1` everywhere. [`tests/smoke.cpp`](tests/smoke.cpp)
-checks the plug-in's side (ports, `has_hard_realtime_requirement`, both modes, the mode kept across reactivation) on the
-native build under `ctest`.
+**Loads** the plug-in. The protocol below applies to a host that supports `clap.render`. CLAP does not require a host
+to call `render.set`; one that never does renders `1` everywhere and is still correct. A host that does call it sets
+`CLAP_RENDER_OFFLINE` before an offline render (an export, or any render not tied to an audio device's clock), and the
+output reads `2`. When it plays in real time again it sets `CLAP_RENDER_REALTIME`, and the output reads `1`.
+[`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, `has_hard_realtime_requirement`, both modes, the
+mode kept across reactivation, an unknown mode refused) on the native build under `ctest`.
 
 ## Ports and extension
 
@@ -27,7 +28,10 @@ native build under `ctest`.
 | Audio output 0, `Render mode` | 1 | Render mode plus one |
 
 There is no audio input, no note port and there are no parameters. `render.has_hard_realtime_requirement` returns
-`false`, so the plug-in accepts both modes. It returns `CLAP_PROCESS_CONTINUE` from every block.
+`false`, so the plug-in accepts both modes. `render.set` returns `true` for `CLAP_RENDER_REALTIME` and
+`CLAP_RENDER_OFFLINE`, and `false` for any other value, which leaves the mode as it was
+([`ext/render.h`](../../external/clap/include/clap/ext/render.h): `set` returns whether the mode could be applied). The
+plug-in returns `CLAP_PROCESS_CONTINUE` from every block.
 
 ## Output
 
@@ -45,6 +49,8 @@ Every frame of a block holds the same value, and the output's `constant_mask` is
 each block. It survives deactivation, reactivation and `reset`; only `render.set` changes it.
 
 ## Validation protocol
+
+For a host that supports `clap.render`:
 
 | Step | Host action | Expected output |
 | ---: | --- | --- |

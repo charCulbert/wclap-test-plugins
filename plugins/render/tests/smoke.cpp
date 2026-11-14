@@ -87,6 +87,9 @@ void runSmoke()
     require(render->set(plugin, CLAP_RENDER_REALTIME), "set real time failed");
     expectBlock(plugin, 1.0f, "back to real time");
 
+    require(!render->set(plugin, 2) && !render->set(plugin, -1), "set took an unknown mode");
+    expectBlock(plugin, 1.0f, "unknown mode left real time");
+
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
     plugin->destroy(plugin);
