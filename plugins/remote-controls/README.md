@@ -15,13 +15,19 @@ again when the plug-in calls `remote_controls.changed`.
 
 ## A correct host
 
-**Loads** the plug-in and maps its controls to the pages below. Turning the control at index 1 of page `Main` sends a
-`CLAP_EVENT_PARAM_VALUE` for parameter `B` (ID 1), and the left channel reads `2`. After a program change it services
-the plug-in's `request_callback`, receives `changed` and `suggest_page` from `on_main_thread`, and reads the pages
-again: the control at index 1 of `Main` now sets parameter `C` (ID 2), so the left channel reads `3`. A host that keeps
-its first mapping still sets `B`. What a host does with `suggest_page` is up to it: the call is a suggestion
-([`ext/remote-controls.h`](../../external/clap/include/clap/ext/remote-controls.h)), and a host that does not switch
-pages is still correct. The protocol's program change needs a host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side
+**Loads** the plug-in. Remote controls are optional for a host: one that does not read the pages or offer controls is
+still correct, and simply shows nothing here. A host that maps its controls to the pages below sends a
+`CLAP_EVENT_PARAM_VALUE` for parameter `B` (ID 1) when the control at index 1 of page `Main` is turned, and the left
+channel reads `2`.
+
+After a program change the plug-in calls `request_callback` and then, from `on_main_thread`, `changed` and
+`suggest_page`. [`ext/remote-controls.h`](../../external/clap/include/clap/ext/remote-controls.h) says only that
+`changed` informs the host that the pages have changed; it does not say what the host does next. Reading the pages
+again is the expected response: the control at index 1 of `Main` then sets parameter `C` (ID 2), so the left channel
+reads `3`. A host that keeps its first mapping still sets `B`; that is its own choice. What a host does with
+`suggest_page` is up to it too: the call is a suggestion, and a host that does not switch pages is still correct. The
+protocol's program change needs a host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks
+the plug-in's side
 (ports, parameters, both layouts' pages, the output, one `request_callback`, `changed` and `suggest_page` per layout
 change, `params.flush`, the draft host extension) on the native build under `ctest`.
 
