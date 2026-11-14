@@ -42,6 +42,13 @@ A call the plug-in cannot take in its current state (`show` before `set_parent`,
 `clap.log` at `CLAP_LOG_HOST_MISBEHAVING`. The plug-in keeps running. If the host destroys the plug-in with its GUI
 still created, the plug-in logs that, destroys the GUI and carries on.
 
+Not every one of those log lines marks a broken CLAP rule. The lines for `set_size` on a GUI that is not resizable and
+for destroying the plug-in with its GUI open come from the checks in
+[clap-helpers](../../external/clap-helpers/include/clap/helpers/plugin.hxx), and the line for `show` before
+`set_parent` follows the order `gui.h` describes. The header describes that order; it does not state these as
+requirements. Treat those lines as notes on the host's call order, not failures. A message before `get_uri` does break
+a stated rule (`webview.h`).
+
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (call order, refusals and their log lines, size,
 resources through a stream that takes a few bytes per write, media types, messages and replies, repeated entry
 `init`/`deinit`) on the native build under `ctest`.

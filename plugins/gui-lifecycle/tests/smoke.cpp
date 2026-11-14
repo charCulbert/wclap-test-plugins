@@ -38,9 +38,11 @@ void hostLog(const clap_host_t*, clap_log_severity severity, const char*)
 }
 const clap_host_log_t hostLogExtension { hostLog };
 
+bool offerWebview = true;
+
 const void* hostGetExtension(const clap_host_t*, const char* id)
 {
-    if (std::strcmp(id, CLAP_EXT_WEBVIEW) == 0) return &hostWebview;
+    if (std::strcmp(id, CLAP_EXT_WEBVIEW) == 0) return offerWebview ? &hostWebview : nullptr;
     if (std::strcmp(id, CLAP_EXT_LOG) == 0) return &hostLogExtension;
     return nullptr;
 }
@@ -160,6 +162,11 @@ void runSmoke()
     require(gui->is_api_supported(plugin, CLAP_WINDOW_API_WEBVIEW, false)
                 && !gui->is_api_supported(plugin, CLAP_WINDOW_API_WEBVIEW, true),
             "api support mismatch");
+    const char* preferredApi = nullptr;
+    bool preferredFloating = true;
+    require(gui->get_preferred_api(plugin, &preferredApi, &preferredFloating)
+                && std::strcmp(preferredApi, CLAP_WINDOW_API_WEBVIEW) == 0 && !preferredFloating,
+            "preferred api mismatch");
     require(gui->create(plugin, CLAP_WINDOW_API_WEBVIEW, false), "create failed");
     require(!gui->create(plugin, CLAP_WINDOW_API_WEBVIEW, false), "second create succeeded");
     // The page may send before set_parent and show.
@@ -210,6 +217,19 @@ void runSmoke()
                 && !again->get_extension(again, CLAP_EXT_BACKGROUND_STATE_CONTEXT),
             "unimplemented background extensions exposed");
     again->destroy(again);
+
+    // A host without clap.webview: no API is supported or preferred.
+    offerWebview = false;
+    const auto* plain = factory->create_plugin(factory, &host, pluginId);
+    require(plain && plain->init(plain), "plugin init without webview failed");
+    const auto* plainGui = static_cast<const clap_plugin_gui_t*>(
+        plain->get_extension(plain, CLAP_EXT_GUI));
+    const char* api = nullptr;
+    bool floating = false;
+    require(!plainGui->is_api_supported(plain, CLAP_WINDOW_API_WEBVIEW, false)
+                && !plainGui->get_preferred_api(plain, &api, &floating),
+            "an API is offered to a host without clap.webview");
+    plain->destroy(plain);
     clap_entry.deinit();
 }
 

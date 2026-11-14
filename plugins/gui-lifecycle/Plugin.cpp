@@ -196,7 +196,8 @@ protected:
     }
     bool guiGetPreferredApi(const char** api, bool* floating) noexcept override
     {
-        if (!api || !floating) return false;
+        // As is_api_supported: no preferred API without the host's clap.webview.
+        if (!api || !floating || !hostWebview) return false;
         *api = CLAP_WINDOW_API_WEBVIEW;
         *floating = false;
         return true;
