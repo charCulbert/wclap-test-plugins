@@ -58,7 +58,7 @@ start of each block. A failed load changes neither channel.
 
 ## State
 
-The state is 12 bytes, three little-endian `uint32_t`: magic `0x57545343` (bytes `43 53 54 57`), version `1`, and the
+The state is 12 bytes, three `uint32_t` in native byte order (little-endian on all supported targets): magic `0x57545343` (bytes `43 53 54 57`), version `1`, and the
 context it was saved for (`0` to `3`). A load fails on a wrong magic or version, a saved-for value other than `0` to
 `3`, a short state, or bytes after the 12. A save or load with a context other than 1, 2 and 3, such as one a later
 CLAP version adds, works as `state.save` or `state.load` does and is recorded as `0`. Saving never depends on what was
