@@ -9,6 +9,7 @@ identical code.
 | Plug-in | Proves |
 | --- | --- |
 | [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface in CLAP order (`create`, `get_size`, `set_parent`, `show`) and serves the plug-in's multi-file resources to it. |
+| [`log`](plugins/log/README.md) | The host takes `log` calls from the audio thread and the main thread, at every severity, with UTF-8 text, and carries on running the plug-in. |
 | [`midi-echo`](plugins/midi-echo/README.md) | The host sends notes and raw MIDI to a plug-in in the dialect its note input asks for (MIDI or MIDI 2), passes sysex through, sets the event flags it means to, and receives the note and MIDI events a plug-in sends out. |
 | [`note-ids`](plugins/note-ids/README.md) | The host passes its note IDs through to the plug-in, ends notes by ID, key, or a wildcard (`-1`) that matches every voice on a key, delivers note chokes, and receives `CLAP_EVENT_NOTE_END` with the address of the note-on. |
 | [`note-name`](plugins/note-name/README.md) | The host reads a plug-in's note names, including a name for any key (`-1`), and reads them again when the plug-in calls `note_name.changed`. |
