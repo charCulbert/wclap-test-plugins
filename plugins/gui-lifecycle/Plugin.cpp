@@ -148,15 +148,17 @@ protected:
         {
             auto filePath = root + "/" + relative;
             input.open(filePath, std::ios::binary);
-            if (input) break;
+            if (input.is_open()) break;
             input.clear();
             // Under WASI, open() only resolves paths inside a preopened directory.
             // A host may preopen the plug-in directory as "." rather than at its
             // absolute path, so retry the same path relative to the current one.
             if (!filePath.empty() && filePath.front() == '/')
+            {
                 input.open(filePath.substr(1), std::ios::binary);
-            if (input) break;
-            input.clear();
+                if (input.is_open()) break;
+                input.clear();
+            }
         }
         if (!input.is_open()) return false;
         std::vector<uint8_t> bytes(std::istreambuf_iterator<char>(input), {});
