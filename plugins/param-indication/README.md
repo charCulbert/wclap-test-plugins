@@ -15,9 +15,10 @@ automation is in, with the colours it shows them in, and clears both when they e
 ## A correct host
 
 **Loads** the plug-in. Showing mappings and automation is the host's choice, and a host that shows neither, or has no
-`param_indication`, leaves every channel at `-1` and is still correct. A host that shows mappings or automation tells
+`param_indication`, leaves every channel at `-1` and is still correct. A host that shows mappings or automation may tell
 the plug-in through `param_indication`
-([`ext/param-indication.h`](../../external/clap/include/clap/ext/param-indication.h)). When it maps the parameter to a
+([`ext/param-indication.h`](../../external/clap/include/clap/ext/param-indication.h)); one that does shows the
+following. When it maps the parameter to a
 control it calls `set_mapping` with `has_mapping` true, and output 0 reads `1` and the colour. When the parameter's
 automation is present, playing, recording or overriding it calls `set_automation` with that state, and output 1 reads
 it. When the mapping or automation goes away it calls them again with `false` or
