@@ -11,7 +11,7 @@ identical code.
 | [`audio-ports-activation`](plugins/audio-ports-activation/README.md) | The host activates and deactivates a plug-in's audio ports through `audio_ports_activation` only while the plug-in is inactive, keeps passing buffers for deactivated ports, and reads their silence and `constant_mask`. |
 | [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface in CLAP order (`create`, `get_size`, `set_parent`, `show`) and serves the plug-in's multi-file resources to it. |
 | [`log`](plugins/log/README.md) | The host takes `log` calls from the audio thread and the main thread, at every severity, with UTF-8 text, and carries on running the plug-in. |
-| [`midi-echo`](plugins/midi-echo/README.md) | The host sends notes and raw MIDI to a plug-in in the dialect its note input asks for (MIDI or MIDI 2), passes sysex through, sets the event flags it means to, and receives the note and MIDI events a plug-in sends out. |
+| [`midi-echo`](plugins/midi-echo/README.md) | The host sends notes and raw MIDI to a plug-in in the one dialect its note input takes (MIDI, MIDI 2 or CLAP), passes sysex through, sets the event flags it means to, and receives the note and MIDI events a plug-in sends out. |
 | [`note-ids`](plugins/note-ids/README.md) | The host passes its note IDs through to the plug-in, ends notes by ID, key, or a wildcard (`-1`) that matches every voice on a key, delivers note chokes, and receives `CLAP_EVENT_NOTE_END` with the address of the note-on. |
 | [`note-name`](plugins/note-name/README.md) | The host reads a plug-in's note names, including a name for any key (`-1`), and reads them again when the plug-in calls `note_name.changed`. |
 | [`param-indication`](plugins/param-indication/README.md) | The host tells a plug-in, through `param_indication`, when a parameter is mapped to a control and what state its automation is in, with the colours it shows them in, and clears both when they end. |
@@ -22,11 +22,13 @@ identical code.
 | [`state-context`](plugins/state-context/README.md) | The host saves and loads a plug-in's state through `state_context` with the context that matches what it is doing: `CLAP_STATE_CONTEXT_FOR_PRESET` for a preset, `CLAP_STATE_CONTEXT_FOR_DUPLICATE` when it copies the plug-in, and `CLAP_STATE_CONTEXT_FOR_PROJECT` for a project. |
 | [`voice-info`](plugins/voice-info/README.md) | The host reads a plug-in's voice info while it is active and reads it again when the plug-in calls `voice_info.changed`. |
 
-Each plug-in's README says what a correct host does with it: load it, reject it, or contain it (stop processing it
-safely; see process-lifecycle's README).
+Each plug-in's README says what a correct host does with it. Every plug-in is meant to be loaded. Only what the CLAP
+headers require is pass/fail, with the header cited; where CLAP leaves a choice to the host, the README says what each
+choice shows. process-lifecycle and audio-ports-activation also say when a host may stop processing a plug-in after
+`CLAP_PROCESS_ERROR` (contain it).
 
-Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`. `midi-echo` also holds a second plug-in,
-`com.charlieculbert.wclap-test-plugins.midi-echo.midi2`.
+Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`. `midi-echo` also holds two more plug-ins,
+`com.charlieculbert.wclap-test-plugins.midi-echo.midi2` and `com.charlieculbert.wclap-test-plugins.midi-echo.clap`.
 
 ## Download
 
@@ -87,8 +89,8 @@ Plug-ins are written to `build-native/artifacts/<name>.clap`.
    - `Plugin.h`, `Plugin.cpp`: the plug-in, in namespace `wclap_test_plugins::<name>`. Use `TEST_PLUGIN_ID`,
      `TEST_PLUGIN_VERSION` and `TEST_PLUGIN_URL` in the descriptor; CMake defines them.
    - `Entry.cpp`: the `clap_entry` export.
-   - `README.md`: a `## Proves` heading followed by one paragraph, then what a correct host does (load, reject or
-     contain). The release manifest reads the Proves paragraph.
+   - `README.md`: a `## Proves` heading followed by one paragraph, then what a correct host does: what CLAP requires
+     (citing the header) and what each host choice shows. The release manifest reads the Proves paragraph.
    - `resources/` (optional): files bundled next to the module.
    - `tests/*.cpp` (optional): each file becomes a native `ctest` test linked against the plug-in.
 2. Add a row to the table above.
