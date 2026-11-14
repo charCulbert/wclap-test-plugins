@@ -71,13 +71,17 @@ void require(bool condition, const std::string& message)
     if (!condition) throw std::runtime_error(message);
 }
 
-// The resources directory beside this test's source, standing in for a bundle.
+// The plug-in's resources directory, standing in for a bundle. CMake passes it as an absolute path.
 std::string resourcesDirectory()
 {
+#ifdef TEST_PLUGIN_RESOURCES
+    return TEST_PLUGIN_RESOURCES;
+#else
     std::string path = __FILE__;
     const auto slash = path.find_last_of("/\\");
     require(slash != std::string::npos, "no directory in __FILE__");
     return path.substr(0, slash) + "/../resources";
+#endif
 }
 
 void runSmoke()
