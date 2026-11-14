@@ -134,6 +134,8 @@ void check(const clap_plugin_factory_t* factory, const char* id, uint32_t suppor
     event.value = { header(6, CLAP_EVENT_PARAM_VALUE, sizeof(clap_event_param_value_t)), 1,
                     nullptr, -1, -1, -1, -1, 0.5 };
     in.add(event);
+    event.note = { header(7, CLAP_EVENT_NOTE_OFF, sizeof(clap_event_note_t)), 5, 0, 2, 60, 0.0 };
+    in.add(event);
     event.note = { header(blockSize, CLAP_EVENT_NOTE_OFF, sizeof(clap_event_note_t)), 5, 0, 2, 60,
                    0.0 };
     in.add(event);
@@ -153,15 +155,17 @@ void check(const clap_plugin_factory_t* factory, const char* id, uint32_t suppor
     require(plugin->process(plugin, &process) == CLAP_PROCESS_CONTINUE,
             name + ": status mismatch");
 
-    // Frame: [left, right]. Every other frame is 0.
-    const std::array<std::array<float, 2>, 7> marks { {
+    // Frame: [left, right]; left is the event type plus 1, so CLAP_EVENT_NOTE_ON
+    // (0) differs from no event. Every other frame is 0.
+    const std::array<std::array<float, 2>, 8> marks { {
         { 0, 0 },
-        { CLAP_EVENT_NOTE_ON, CLAP_EVENT_IS_LIVE },
-        { CLAP_EVENT_MIDI, 0 },
-        { CLAP_EVENT_MIDI_SYSEX, 0 },
-        { CLAP_EVENT_MIDI2, CLAP_EVENT_DONT_RECORD },
-        { CLAP_EVENT_NOTE_CHOKE, 0 },
-        { CLAP_EVENT_PARAM_VALUE, 0 },
+        { CLAP_EVENT_NOTE_ON + 1, CLAP_EVENT_IS_LIVE },
+        { CLAP_EVENT_MIDI + 1, 0 },
+        { CLAP_EVENT_MIDI_SYSEX + 1, 0 },
+        { CLAP_EVENT_MIDI2 + 1, CLAP_EVENT_DONT_RECORD },
+        { CLAP_EVENT_NOTE_CHOKE + 1, 0 },
+        { CLAP_EVENT_PARAM_VALUE + 1, 0 },
+        { CLAP_EVENT_NOTE_OFF + 1, 0 },
     } };
     for (uint32_t frame = 0; frame < blockSize; ++frame)
     {
@@ -173,10 +177,12 @@ void check(const clap_plugin_factory_t* factory, const char* id, uint32_t suppor
 
     // Echoed in input order, unchanged; the parameter value and the event past
     // the block are not.
-    require(out.list.size() == 5, name + ": echoed " + std::to_string(out.list.size()));
-    for (uint32_t index = 0; index < 5; ++index)
+    const std::array<uint32_t, 6> echoed { 0, 1, 2, 3, 4, 6 };
+    require(out.list.size() == echoed.size(),
+            name + ": echoed " + std::to_string(out.list.size()));
+    for (uint32_t index = 0; index < echoed.size(); ++index)
     {
-        const auto& sent = in.list[index];
+        const auto& sent = in.list[echoed[index]];
         require(std::memcmp(&out.list[index], &sent, sent.header.size) == 0,
                 name + ": echo " + std::to_string(index) + " differs");
     }

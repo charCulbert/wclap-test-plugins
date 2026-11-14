@@ -13,7 +13,7 @@ namespace
 {
 
 // One bundle, three plug-ins that differ only in the one dialect their note
-// ports take, so a host has exactly one correct way to send each event.
+// ports list. Each takes, marks and echoes whatever dialect arrives.
 constexpr char midiEchoId[] = TEST_PLUGIN_ID;
 constexpr char midi2EchoId[] = TEST_PLUGIN_ID ".midi2";
 constexpr char clapEchoId[] = TEST_PLUGIN_ID ".clap";
@@ -33,18 +33,18 @@ const char* features[] { CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UT
 const clap_plugin_descriptor_t descriptors[] {
     { CLAP_VERSION, midiEchoId, "WCLAP MIDI Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
       TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
-      "Echoes every note and MIDI event, taken in the MIDI dialect only, and marks its type and "
-      "flags in audio",
+      "Echoes every note and MIDI event and marks its type and flags in audio; its note ports "
+      "list the MIDI dialect only",
       features },
     { CLAP_VERSION, midi2EchoId, "WCLAP MIDI 2 Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
       TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
-      "Echoes every note and MIDI event, taken in the MIDI 2 dialect only, and marks its type and "
-      "flags in audio",
+      "Echoes every note and MIDI event and marks its type and flags in audio; its note ports "
+      "list the MIDI 2 dialect only",
       features },
     { CLAP_VERSION, clapEchoId, "WCLAP CLAP Note Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
       TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
-      "Echoes every note and MIDI event, taken in the CLAP dialect only, and marks its type and "
-      "flags in audio",
+      "Echoes every note and MIDI event and marks its type and flags in audio; its note ports "
+      "list the CLAP dialect only",
       features },
 };
 
@@ -88,7 +88,8 @@ protected:
             const auto* header = in->get(in, index);
             if (!header || header->space_id != CLAP_CORE_EVENT_SPACE_ID || header->time >= frames)
                 continue;
-            left[header->time] = header->type;
+            // Type plus 1, so CLAP_EVENT_NOTE_ON (0) differs from no event.
+            left[header->time] = header->type + 1.0f;
             right[header->time] = header->flags;
             switch (header->type)
             {
@@ -98,6 +99,8 @@ protected:
                 case CLAP_EVENT_MIDI:
                 case CLAP_EVENT_MIDI_SYSEX:
                 case CLAP_EVENT_MIDI2:
+                    // events.h: the host copies the event, and a sysex event's
+                    // buffer, inside try_push.
                     if (out) out->try_push(out, header);
                     break;
                 default:
