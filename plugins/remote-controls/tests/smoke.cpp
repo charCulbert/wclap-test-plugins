@@ -30,9 +30,13 @@ void hostChanged(const clap_host_t*) { ++pagesChanged; }
 void hostSuggestPage(const clap_host_t*, clap_id pageId) { suggested.push_back(pageId); }
 const clap_host_remote_controls_t hostRemoteControls { hostChanged, hostSuggestPage };
 
+// The extension ID the host answers to: the final one, or the draft one an
+// older host has.
+const char* hostRemoteControlsId = CLAP_EXT_REMOTE_CONTROLS;
+
 const void* hostGetExtension(const clap_host_t*, const char* id)
 {
-    return std::strcmp(id, CLAP_EXT_REMOTE_CONTROLS) == 0 ? &hostRemoteControls : nullptr;
+    return std::strcmp(id, hostRemoteControlsId) == 0 ? &hostRemoteControls : nullptr;
 }
 void hostRequest(const clap_host_t*) {}
 void hostRequestCallback(const clap_host_t*) { ++callbackRequests; }
@@ -163,7 +167,8 @@ void runSmoke()
     clap_note_port_info_t noteInfo {};
     require(notePorts && notePorts->count(plugin, true) == 1
                 && notePorts->get(plugin, 0, true, &noteInfo)
-                && (noteInfo.supported_dialects & CLAP_NOTE_DIALECT_MIDI),
+                && noteInfo.supported_dialects == CLAP_NOTE_DIALECT_MIDI
+                && noteInfo.preferred_dialect == CLAP_NOTE_DIALECT_MIDI,
             "note port mismatch");
     require(params && params->count(plugin) == 4, "parameter count mismatch");
     for (uint32_t index = 0; index < 4; ++index)
@@ -216,6 +221,32 @@ void runSmoke()
     require(params->get_value(plugin, 1, &value) && value == 0.25, "parameter 1 value mismatch");
     require(params->get_value(plugin, 2, &value) && value == 0.75, "parameter 2 value mismatch");
 
+    // params.flush applies parameter values and ignores a program change.
+    plugin->stop_processing(plugin);
+    EventList flush;
+    flush.value(0, 3, 0.5);
+    flush.program(0, 1);
+    params->flush(plugin, &flush.events, nullptr);
+    require(params->get_value(plugin, 3, &value) && value == 0.5, "flush did not set parameter 3");
+    require(callbackRequests == 2, "flush applied a program change");
+    require(readPages(plugin, controls) == "1:Main:device:0123;2:Preset:preset:23;",
+            "flush changed the layout");
+
+    plugin->deactivate(plugin);
+    plugin->destroy(plugin);
+
+    // A host that only has the draft extension ID still gets changed.
+    hostRemoteControlsId = CLAP_EXT_REMOTE_CONTROLS_COMPAT;
+    plugin = factory->create_plugin(factory, &host, pluginId);
+    require(plugin && plugin->init(plugin), "plugin init failed with the draft host extension");
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize)
+                && plugin->start_processing(plugin),
+            "activate failed with the draft host extension");
+    EventList draft;
+    draft.program(0, 1);
+    block.run(plugin, draft);
+    plugin->on_main_thread(plugin);
+    require(pagesChanged == 3, "changed not called through the draft host extension");
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
     plugin->destroy(plugin);

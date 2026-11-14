@@ -38,6 +38,9 @@ protected:
     {
         hostRemoteControls = static_cast<const clap_host_remote_controls_t*>(
             host->get_extension(host, CLAP_EXT_REMOTE_CONTROLS));
+        if (!hostRemoteControls)
+            hostRemoteControls = static_cast<const clap_host_remote_controls_t*>(
+                host->get_extension(host, CLAP_EXT_REMOTE_CONTROLS_COMPAT));
         return true;
     }
 
@@ -106,8 +109,9 @@ protected:
         if (!isInput || index != 0 || !info) return false;
         *info = {};
         info->id = 0;
-        info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
-        info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+        // Program change exists only in MIDI, and the plug-in plays no notes.
+        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI;
+        info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI;
         std::snprintf(info->name, sizeof(info->name), "Program change");
         return true;
     }
@@ -148,15 +152,20 @@ protected:
     }
     void paramsFlush(const clap_input_events_t* in, const clap_output_events_t*) noexcept override
     {
+        // params.h: flush delivers parameter events only. A program change
+        // found here is not one, so it is ignored.
         const auto count = in ? in->size(in) : 0;
         for (uint32_t index = 0; index < count; ++index)
-            if (const auto* header = in->get(in, index)) apply(header);
+        {
+            const auto* header = in->get(in, index);
+            if (header && header->type == CLAP_EVENT_PARAM_VALUE) apply(header);
+        }
     }
 
     bool implementRemoteControls() const noexcept override { return true; }
     uint32_t remoteControlsPageCount() noexcept override { return 2; }
-    // A read of the pages starts at index 0, so calls for index 0 count the
-    // host's reads.
+    // Calls for index 0 stand in for the host's reads of the pages: a host
+    // that reads them all starts there.
     bool remoteControlsPageGet(uint32_t index,
                                clap_remote_controls_page_t* page) noexcept override
     {
