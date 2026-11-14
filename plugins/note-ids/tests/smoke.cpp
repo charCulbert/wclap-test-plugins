@@ -70,6 +70,51 @@ void require(bool condition, const std::string& message)
     if (!condition) throw std::runtime_error(message);
 }
 
+struct End
+{
+    uint32_t time;
+    int32_t noteId;
+    int16_t channel;
+    int16_t key;
+};
+
+void expectEnds(const OutputList& out, const std::vector<End>& expected, const std::string& what)
+{
+    require(out.ends.size() == expected.size(),
+            what + ": NOTE_END count is " + std::to_string(out.ends.size()));
+    for (size_t index = 0; index < expected.size(); ++index)
+    {
+        const auto& actual = out.ends[index];
+        require(actual.header.time == expected[index].time
+                    && actual.note_id == expected[index].noteId && actual.port_index == 0
+                    && actual.channel == expected[index].channel
+                    && actual.key == expected[index].key,
+                what + ": NOTE_END " + std::to_string(index) + " mismatch: time "
+                    + std::to_string(actual.header.time) + ", note ID "
+                    + std::to_string(actual.note_id) + ", key " + std::to_string(actual.key));
+    }
+}
+
+// Runs one block and returns the NOTE_END events; the left and right channels
+// go to started and ended.
+OutputList runBlock(const clap_plugin_t* plugin, EventList& in,
+                    std::array<float, blockSize>& started, std::array<float, blockSize>& ended)
+{
+    started.fill(-9.0f);
+    ended.fill(-9.0f);
+    std::array<float*, 2> channels { started.data(), ended.data() };
+    clap_audio_buffer_t output { channels.data(), nullptr, 2, 0, 0 };
+    OutputList out;
+    clap_process_t process {};
+    process.frames_count = blockSize;
+    process.audio_outputs = &output;
+    process.audio_outputs_count = 1;
+    process.in_events = &in.events;
+    process.out_events = &out.events;
+    require(plugin->process(plugin, &process) == CLAP_PROCESS_CONTINUE, "status mismatch");
+    return out;
+}
+
 void runSmoke()
 {
     const clap_host_t host {
@@ -120,18 +165,7 @@ void runSmoke()
 
     std::array<float, blockSize> started {};
     std::array<float, blockSize> ended {};
-    started.fill(-9.0f);
-    ended.fill(-9.0f);
-    std::array<float*, 2> channels { started.data(), ended.data() };
-    clap_audio_buffer_t output { channels.data(), nullptr, 2, 0, 0 };
-    OutputList out;
-    clap_process_t process {};
-    process.frames_count = blockSize;
-    process.audio_outputs = &output;
-    process.audio_outputs_count = 1;
-    process.in_events = &in.events;
-    process.out_events = &out.events;
-    require(plugin->process(plugin, &process) == CLAP_PROCESS_CONTINUE, "status mismatch");
+    const auto out = runBlock(plugin, in, started, ended);
 
     const std::map<uint32_t, float> expectedStarted {
         { 2, 1.0f }, { 4, 101.0f }, { 6, 201.0f }, { 8, -1.0f }, { 18, 301.0f }, { 127, 6.0f }
@@ -153,24 +187,33 @@ void runSmoke()
                     + std::to_string(ended[frame]));
     }
 
-    struct End { uint32_t time; int32_t noteId; int16_t channel; int16_t key; };
-    const std::vector<End> expectedEnds {
-        { 10, 100, 0, 60 }, { 16, 200, 1, 62 }, { 20, 0, 0, 60 }, { 20, 300, 0, 60 },
-        { 22, -1, 0, 64 }
-    };
-    require(out.ends.size() == expectedEnds.size(),
-            "NOTE_END count is " + std::to_string(out.ends.size()));
-    for (size_t index = 0; index < expectedEnds.size(); ++index)
-    {
-        const auto& actual = out.ends[index];
-        const auto& expected = expectedEnds[index];
-        require(actual.header.time == expected.time && actual.note_id == expected.noteId
-                    && actual.port_index == 0 && actual.channel == expected.channel
-                    && actual.key == expected.key,
-                "NOTE_END " + std::to_string(index) + " mismatch: time "
-                    + std::to_string(actual.header.time) + ", note ID "
-                    + std::to_string(actual.note_id) + ", key " + std::to_string(actual.key));
-    }
+    expectEnds(out,
+               { { 10, 100, 0, 60 }, { 16, 200, 1, 62 }, { 20, 0, 0, 60 }, { 20, 300, 0, 60 },
+                 { 22, -1, 0, 64 } },
+               "protocol");
+
+    // NOTE_END order follows note-on order even when a voice slot is reused.
+    // The note-on stamped past the last block still has a voice; end it first.
+    EventList reuse;
+    reuse.add(0, CLAP_EVENT_NOTE_OFF, -1, -1, -1, -1);
+    reuse.add(0, CLAP_EVENT_NOTE_ON, 1, 60);
+    reuse.add(1, CLAP_EVENT_NOTE_ON, 2, 61);
+    reuse.add(2, CLAP_EVENT_NOTE_OFF, 1, 60);
+    reuse.add(3, CLAP_EVENT_NOTE_ON, 3, 62); // takes the first voice slot back
+    reuse.add(4, CLAP_EVENT_NOTE_OFF, -1, -1, -1, -1);
+    expectEnds(runBlock(plugin, reuse, started, ended),
+               { { 0, 5, 0, 65 }, { 2, 1, 0, 60 }, { 4, 2, 0, 61 }, { 4, 3, 0, 62 } },
+               "slot reuse");
+
+    // A note-on with no free voice ends at once.
+    EventList full;
+    for (int16_t key = 0; key < 65; ++key) full.add(key, CLAP_EVENT_NOTE_ON, key, key);
+    full.add(100, CLAP_EVENT_NOTE_OFF, -1, -1, -1, -1);
+    std::vector<End> ends { { 64, 64, 0, 64 } };
+    for (int16_t key = 0; key < 64; ++key) ends.push_back({ 100, key, 0, key });
+    expectEnds(runBlock(plugin, full, started, ended), ends, "no free voice");
+    require(started[64] == 65.0f && ended[64] == 65.0f,
+            "note-on with no free voice is not marked started and ended");
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);

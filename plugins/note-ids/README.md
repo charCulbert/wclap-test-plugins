@@ -18,7 +18,7 @@ voice on a key, delivers note chokes, and receives `CLAP_EVENT_NOTE_END` with th
 assigned appear in the output on the frames it scheduled, and every note it ends comes back as a `NOTE_END` with the
 note ID, port, channel and key it gave the note-on. A host without note ID support sends `-1`, which the output shows.
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, every row below, the `NOTE_END` events) on the
-native build under `ctest`.
+native build under `ctest`, along with `NOTE_END` order after a voice slot is reused and a note-on with no free voice.
 
 ## Ports
 
@@ -54,10 +54,13 @@ with every field `-1` ends all voices. A note-off that matches nothing writes no
 
 Each `NOTE_END` carries the voice's own note ID, port, channel and key from its note-on, not the note-off's. When one
 event ends several voices, their encoded IDs add up on the right channel and their `NOTE_END` events come out in the
-order the voices started.
+order their note-ons arrived, whichever voice slots they used.
 
 Several note-ons on one frame add up on the left channel too. Activating or resetting the plug-in ends every voice
-without sending `NOTE_END`. There are 64 voices; a note-on with none free still writes its click but starts no voice.
+without sending `NOTE_END`. There are 64 voices. A note-on with none free still writes its click on the left, starts no voice, and ends at once:
+the right channel shows its encoded ID on the same frame and it gets its `NOTE_END` there. The host keeps a voice for
+every note-on until the plug-in sends `NOTE_END` ([`events.h`](../../external/clap/include/clap/events.h), comment
+above `CLAP_EVENT_NOTE_ON`), so every note-on gets one.
 
 ## Validation protocol
 
@@ -69,13 +72,19 @@ other samples are `0`.
 | 2 | Note-on (0, 0, 60) | `1` | | |
 | 4 | Note-on (100, 0, 60) | `101` | | |
 | 6 | Note-on (200, 1, 62) | `201` | | |
+| 8 | Note-on (-1, 0, 64) | `-1` | | |
 | 10 | Note-off (100, 0, 60) | | `101` | (100, 0, 60) |
 | 12 | Note-off (999, 1, 62) | | | none: no voice has ID 999 |
 | 14 | Note-off (-1, 0, 62) | | | none: the voice on key 62 is on channel 1 |
 | 16 | Note-choke (200, 1, 62) | | `201` | (200, 1, 62) |
 | 18 | Note-on (300, 0, 60) | `301` | | |
 | 20 | Note-off (-1, 0, 60) | | `302` | (0, 0, 60), then (300, 0, 60) |
-| 22 | Note-off (-1, -1, -1) | | | none: no voices left |
+| 22 | Note-off (-1, -1, -1) | | `-1` | (-1, 0, 64) |
 
-A host that drops or renumbers note IDs shows other values on the left channel. A host that sends note ID `-1` on
+Frame 8 is a note-on without a note ID, which CLAP allows (`-1`); it ends with the full wildcard at frame 22. A host that
+drops or renumbers note IDs shows other values on the left channel. A host that sends note ID `-1` on
 note-on writes `-1` there. A host that rewrites the wildcard at frame 20 to a single note ID ends only that voice.
+
+The smoke test also sends two events a correct host does not send, to check the plug-in's side: a note-on with key `-1`
+at frame 24 (ignored: nothing written, no voice), and a note-on (5, 0, 65) stamped at frame 500 of a 128-frame block
+(applied on the last frame: left `6` at frame 127).

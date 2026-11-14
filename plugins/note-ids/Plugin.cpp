@@ -19,6 +19,7 @@ constexpr size_t maxVoices = 64;
 struct Voice
 {
     bool active = false;
+    uint64_t started = 0; // start order, for NOTE_END order
     int32_t noteId = -1;
     int16_t port = -1;
     int16_t channel = -1;
@@ -45,7 +46,7 @@ public:
 protected:
     bool activate(double, uint32_t, uint32_t) noexcept override
     {
-        reset();
+        voices = {};
         return true;
     }
     bool startProcessing() noexcept override { return true; }
@@ -77,7 +78,7 @@ protected:
             const auto frame = std::min(header->time, frames - 1);
             const auto& note = *reinterpret_cast<const clap_event_note_t*>(header);
             if (header->type == CLAP_EVENT_NOTE_ON)
-                started[frame] += noteOn(note);
+                started[frame] += noteOn(note, frame, process->out_events, ended[frame]);
             else if (header->type == CLAP_EVENT_NOTE_OFF || header->type == CLAP_EVENT_NOTE_CHOKE)
                 ended[frame] += endVoices(note, frame, process->out_events);
         }
@@ -121,13 +122,23 @@ protected:
     }
 
 private:
-    float noteOn(const clap_event_note_t& note) noexcept
+    float noteOn(const clap_event_note_t& note, uint32_t frame, const clap_output_events_t* out,
+                 float& ended) noexcept
     {
         if (note.port_index < 0 || note.channel < 0 || note.key < 0) return 0.0f;
+        const Voice voice { true, ++startCount, note.note_id, note.port_index, note.channel,
+                            note.key };
         const auto free = std::find_if(voices.begin(), voices.end(),
                                        [](const Voice& voice) { return !voice.active; });
         if (free != voices.end())
-            *free = Voice { true, note.note_id, note.port_index, note.channel, note.key };
+            *free = voice;
+        else
+        {
+            // The host keeps a voice for every note-on until NOTE_END
+            // (events.h), so a note with no voice ends at once.
+            ended += encode(voice.noteId);
+            sendNoteEnd(voice, frame, out);
+        }
         return encode(note.note_id);
     }
 
@@ -137,7 +148,8 @@ private:
     float endVoices(const clap_event_note_t& note, uint32_t frame,
                     const clap_output_events_t* out) noexcept
     {
-        float sum = 0.0f;
+        std::array<Voice*, maxVoices> matched {};
+        size_t count = 0;
         for (auto& voice : voices)
         {
             if (!voice.active || (note.note_id != -1 && note.note_id != voice.noteId)
@@ -145,24 +157,36 @@ private:
                 || (note.channel != -1 && note.channel != voice.channel)
                 || (note.key != -1 && note.key != voice.key))
                 continue;
-            sum += encode(voice.noteId);
-            if (out)
-            {
-                clap_event_note_t end {};
-                end.header = { sizeof(end), frame, CLAP_CORE_EVENT_SPACE_ID,
-                               CLAP_EVENT_NOTE_END, 0 };
-                end.note_id = voice.noteId;
-                end.port_index = voice.port;
-                end.channel = voice.channel;
-                end.key = voice.key;
-                out->try_push(out, &end.header);
-            }
-            voice = {};
+            matched[count++] = &voice;
+        }
+        // In the order the voices started, whichever slots they use.
+        std::sort(matched.begin(), matched.begin() + count,
+                  [](const Voice* a, const Voice* b) { return a->started < b->started; });
+        float sum = 0.0f;
+        for (size_t index = 0; index < count; ++index)
+        {
+            sum += encode(matched[index]->noteId);
+            sendNoteEnd(*matched[index], frame, out);
+            *matched[index] = {};
         }
         return sum;
     }
 
+    static void sendNoteEnd(const Voice& voice, uint32_t frame,
+                            const clap_output_events_t* out) noexcept
+    {
+        if (!out) return;
+        clap_event_note_t end {};
+        end.header = { sizeof(end), frame, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_END, 0 };
+        end.note_id = voice.noteId;
+        end.port_index = voice.port;
+        end.channel = voice.channel;
+        end.key = voice.key;
+        out->try_push(out, &end.header);
+    }
+
     std::array<Voice, maxVoices> voices {};
+    uint64_t startCount = 0;
 };
 
 uint32_t pluginCount(const clap_plugin_factory_t*) { return 1; }
