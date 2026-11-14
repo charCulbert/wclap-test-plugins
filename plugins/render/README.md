@@ -9,8 +9,8 @@ Plug-in ID: `com.charlieculbert.wclap-test-plugins.render`
 
 ## Proves
 
-The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with
-`CLAP_RENDER_REALTIME` when it goes back to playing in real time.
+Whether the host calls `render.set`: with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and
+with `CLAP_RENDER_REALTIME` when it goes back to playing in real time.
 
 ## A correct host
 
@@ -19,7 +19,7 @@ to call `render.set`; one that never does renders `1` everywhere and is still co
 `CLAP_RENDER_OFFLINE` before an offline render (an export, or any render not tied to an audio device's clock), and the
 output reads `2`. When it plays in real time again it sets `CLAP_RENDER_REALTIME`, and the output reads `1`.
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, `has_hard_realtime_requirement`, both modes, the
-mode kept across reactivation, an unknown mode refused) on the native build under `ctest`.
+mode kept across reactivation, an unknown mode refused in either mode) on the native build under `ctest`.
 
 ## Ports and extension
 

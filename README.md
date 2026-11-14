@@ -18,7 +18,7 @@ identical code.
 | [`probe`](plugins/probe/README.md) | The host delivers note, parameter, modulation and note-expression events on their exact frame, with their exact values, to the right voices. |
 | [`process-lifecycle`](plugins/process-lifecycle/README.md) | The host honours every CLAP process status, wakes a sleeping plug-in on due events and on `request_process`, advances `steady_time` across skipped blocks, and reads finite and infinite tails (how long a plug-in keeps sounding after its input stops) when the plug-in reports a change. |
 | [`remote-controls`](plugins/remote-controls/README.md) | The host reads a plug-in's remote-control pages, maps each control to the parameter the page names, and reads the pages again when the plug-in calls `remote_controls.changed`. |
-| [`render`](plugins/render/README.md) | The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
+| [`render`](plugins/render/README.md) | Whether the host calls `render.set`: with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
 | [`state-context`](plugins/state-context/README.md) | The host saves and loads a plug-in's state through `state_context` with the context that matches what it is doing: `CLAP_STATE_CONTEXT_FOR_PRESET` for a preset, `CLAP_STATE_CONTEXT_FOR_DUPLICATE` when it copies the plug-in, and `CLAP_STATE_CONTEXT_FOR_PROJECT` for a project. |
 | [`voice-info`](plugins/voice-info/README.md) | The host reads a plug-in's voice info while it is active and reads it again when the plug-in calls `voice_info.changed`. |
 

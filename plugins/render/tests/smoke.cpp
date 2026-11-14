@@ -90,6 +90,10 @@ void runSmoke()
     require(!render->set(plugin, 2) && !render->set(plugin, -1), "set took an unknown mode");
     expectBlock(plugin, 1.0f, "unknown mode left real time");
 
+    require(render->set(plugin, CLAP_RENDER_OFFLINE), "set offline failed");
+    require(!render->set(plugin, 2) && !render->set(plugin, -1), "set took an unknown mode");
+    expectBlock(plugin, 2.0f, "unknown mode left offline");
+
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
     plugin->destroy(plugin);
