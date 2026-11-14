@@ -20,6 +20,7 @@ namespace
 constexpr uint32_t blockSize = 32;
 constexpr char midiEchoId[] = TEST_PLUGIN_ID;
 constexpr char midi2EchoId[] = TEST_PLUGIN_ID ".midi2";
+constexpr char clapEchoId[] = TEST_PLUGIN_ID ".clap";
 const uint8_t sysexBytes[] { 0xf0, 0x7d, 0x01, 0x02, 0xf7 };
 
 const void* hostGetExtension(const clap_host_t*, const char*) { return nullptr; }
@@ -190,14 +191,17 @@ void runSmoke()
     require(clap_entry.init("."), "entry init failed");
     const auto* factory = static_cast<const clap_plugin_factory_t*>(
         clap_entry.get_factory(CLAP_PLUGIN_FACTORY_ID));
-    require(factory && factory->get_plugin_count(factory) == 2, "factory mismatch");
+    require(factory && factory->get_plugin_count(factory) == 3, "factory mismatch");
     require(std::strcmp(factory->get_plugin_descriptor(factory, 0)->id, midiEchoId) == 0
-                && std::strcmp(factory->get_plugin_descriptor(factory, 1)->id, midi2EchoId) == 0,
+                && std::strcmp(factory->get_plugin_descriptor(factory, 1)->id, midi2EchoId) == 0
+                && std::strcmp(factory->get_plugin_descriptor(factory, 2)->id, clapEchoId) == 0
+                && !factory->get_plugin_descriptor(factory, 3),
             "descriptor IDs mismatch");
     require(!factory->create_plugin(factory, &host, "unknown"), "created an unknown ID");
-    check(factory, midiEchoId, CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI,
-          CLAP_NOTE_DIALECT_MIDI);
+    // Each plug-in takes one dialect; the marks and echoes do not depend on it.
+    check(factory, midiEchoId, CLAP_NOTE_DIALECT_MIDI, CLAP_NOTE_DIALECT_MIDI);
     check(factory, midi2EchoId, CLAP_NOTE_DIALECT_MIDI2, CLAP_NOTE_DIALECT_MIDI2);
+    check(factory, clapEchoId, CLAP_NOTE_DIALECT_CLAP, CLAP_NOTE_DIALECT_CLAP);
     clap_entry.deinit();
 }
 

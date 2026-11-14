@@ -12,10 +12,11 @@ namespace wclap_test_plugins::midi_echo
 namespace
 {
 
-// One bundle, two plug-ins that differ only in the dialects their note ports
-// take: MIDI preferred (CLAP also supported), or MIDI 2 only.
+// One bundle, three plug-ins that differ only in the one dialect their note
+// ports take, so a host has exactly one correct way to send each event.
 constexpr char midiEchoId[] = TEST_PLUGIN_ID;
 constexpr char midi2EchoId[] = TEST_PLUGIN_ID ".midi2";
+constexpr char clapEchoId[] = TEST_PLUGIN_ID ".clap";
 
 struct Dialects
 {
@@ -23,24 +24,31 @@ struct Dialects
     clap_note_dialect preferred;
 };
 
-constexpr Dialects midiDialects { CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI,
-                                  CLAP_NOTE_DIALECT_MIDI };
+constexpr Dialects midiDialects { CLAP_NOTE_DIALECT_MIDI, CLAP_NOTE_DIALECT_MIDI };
 constexpr Dialects midi2Dialects { CLAP_NOTE_DIALECT_MIDI2, CLAP_NOTE_DIALECT_MIDI2 };
+constexpr Dialects clapDialects { CLAP_NOTE_DIALECT_CLAP, CLAP_NOTE_DIALECT_CLAP };
 
 const char* features[] { CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, nullptr };
 
 const clap_plugin_descriptor_t descriptors[] {
     { CLAP_VERSION, midiEchoId, "WCLAP MIDI Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
       TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
-      "Echoes every note and MIDI event, taken in the MIDI dialect, and marks its type and flags "
-      "in audio",
+      "Echoes every note and MIDI event, taken in the MIDI dialect only, and marks its type and "
+      "flags in audio",
       features },
     { CLAP_VERSION, midi2EchoId, "WCLAP MIDI 2 Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
       TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
       "Echoes every note and MIDI event, taken in the MIDI 2 dialect only, and marks its type and "
       "flags in audio",
       features },
+    { CLAP_VERSION, clapEchoId, "WCLAP CLAP Note Echo Test", "Charlie Culbert", TEST_PLUGIN_URL,
+      TEST_PLUGIN_URL, TEST_PLUGIN_URL, TEST_PLUGIN_VERSION,
+      "Echoes every note and MIDI event, taken in the CLAP dialect only, and marks its type and "
+      "flags in audio",
+      features },
 };
+
+constexpr uint32_t descriptorCount = sizeof(descriptors) / sizeof(descriptors[0]);
 
 class EchoPlugin final
     : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
@@ -133,12 +141,12 @@ private:
     const Dialects dialects;
 };
 
-uint32_t pluginCount(const clap_plugin_factory_t*) { return 2; }
+uint32_t pluginCount(const clap_plugin_factory_t*) { return descriptorCount; }
 
 const clap_plugin_descriptor_t* pluginDescriptor(const clap_plugin_factory_t*,
                                                  uint32_t index)
 {
-    return index < 2 ? &descriptors[index] : nullptr;
+    return index < descriptorCount ? &descriptors[index] : nullptr;
 }
 
 const clap_plugin_t* createPlugin(const clap_plugin_factory_t*,
@@ -149,6 +157,8 @@ const clap_plugin_t* createPlugin(const clap_plugin_factory_t*,
         return (new EchoPlugin(&descriptors[0], host, midiDialects))->clapPlugin();
     if (std::strcmp(id, midi2EchoId) == 0)
         return (new EchoPlugin(&descriptors[1], host, midi2Dialects))->clapPlugin();
+    if (std::strcmp(id, clapEchoId) == 0)
+        return (new EchoPlugin(&descriptors[2], host, clapDialects))->clapPlugin();
     return nullptr;
 }
 
