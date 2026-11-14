@@ -40,7 +40,18 @@ public:
         : Base(&descriptor(), host), host(host) {}
 
 protected:
-    bool activate(double, uint32_t, uint32_t) noexcept override { return true; }
+    bool activate(double, uint32_t, uint32_t) noexcept override
+    {
+        // Each activation runs the protocol from the start.
+        firstProcess = true;
+        quietAwareAudible = false;
+        previousSteadyTime = -1;
+        previousFrames = 0;
+        mode.store(Mode::sleep, std::memory_order_relaxed);
+        mainThreadWakePending.store(false, std::memory_order_relaxed);
+        requestedWakeProof.store(false, std::memory_order_relaxed);
+        return true;
+    }
     bool startProcessing() noexcept override { return true; }
 
     clap_process_status process(const clap_process_t* process) noexcept override
@@ -53,12 +64,13 @@ protected:
         std::fill_n(signal, process->frames_count, 0.0f);
         std::fill_n(steady, process->frames_count, 0.0f);
         applyEvents(process->in_events);
+        steadyMark = steadyTimeAdvance(process);
 
         if (firstProcess)
         {
             firstProcess = false;
             fill(signal, process->frames_count, 0.1f);
-            writeSteadyTime(steady, process);
+            fill(steady, process->frames_count, steadyMark);
             mainThreadWakePending.store(true, std::memory_order_release);
             host->request_callback(host);
             return CLAP_PROCESS_SLEEP;
@@ -66,7 +78,7 @@ protected:
         if (requestedWakeProof.exchange(false, std::memory_order_acq_rel))
         {
             fill(signal, process->frames_count, 0.2f);
-            writeSteadyTime(steady, process);
+            fill(steady, process->frames_count, steadyMark);
             return CLAP_PROCESS_SLEEP;
         }
 
@@ -74,28 +86,28 @@ protected:
         {
             case Mode::finiteTail:
                 fill(signal, process->frames_count, 0.3f);
-                writeSteadyTime(steady, process);
+                fill(steady, process->frames_count, steadyMark);
                 return CLAP_PROCESS_TAIL;
             case Mode::quietAware:
                 if (quietAwareAudible)
                 {
                     quietAwareAudible = false;
                     fill(signal, process->frames_count, 0.4f);
-                    writeSteadyTime(steady, process);
+                    fill(steady, process->frames_count, steadyMark);
                 }
                 // Both outputs deliberately remain zero on the following call so a
                 // host can apply CONTINUE_IF_NOT_QUIET to the complete output set.
                 return CLAP_PROCESS_CONTINUE_IF_NOT_QUIET;
             case Mode::continuous:
                 fill(signal, process->frames_count, 0.5f);
-                writeSteadyTime(steady, process);
+                fill(steady, process->frames_count, steadyMark);
                 return CLAP_PROCESS_CONTINUE;
             case Mode::infiniteTail:
                 fill(signal, process->frames_count, 0.6f);
-                writeSteadyTime(steady, process);
+                fill(steady, process->frames_count, steadyMark);
                 return CLAP_PROCESS_TAIL;
             case Mode::sleep:
-                writeSteadyTime(steady, process);
+                fill(steady, process->frames_count, steadyMark);
                 return CLAP_PROCESS_SLEEP;
             case Mode::error:
                 // A conforming host must discard these conspicuous values.
@@ -130,7 +142,7 @@ protected:
         info->port_type = CLAP_PORT_MONO;
         info->in_place_pair = CLAP_INVALID_ID;
         std::snprintf(info->name, sizeof(info->name), "%s",
-                      index == 0 ? "Status signal" : "Steady time / 65536");
+                      index == 0 ? "Status signal" : "Steady time advance / 65536");
         return true;
     }
 
@@ -174,12 +186,23 @@ private:
         std::fill_n(output, frames, value);
     }
 
-    static void writeSteadyTime(float* output, const clap_process_t* process) noexcept
+    // How far steady_time moved since the previous process call, over 65536.
+    // process.h: steady_time is -1 or >= 0, and grows by at least the previous
+    // call's frames_count. 0 when there is nothing to compare (-1, or the first
+    // call); -1 when the rule is broken.
+    float steadyTimeAdvance(const clap_process_t* process) noexcept
     {
-        const auto value = process->steady_time < 0 ? 0.0
-            : std::clamp(static_cast<double>(process->steady_time) / steadyTimeScale,
-                         0.0, 1.0);
-        fill(output, process->frames_count, static_cast<float>(value));
+        const auto now = process->steady_time;
+        const auto before = previousSteadyTime;
+        const auto frames = previousFrames;
+        previousSteadyTime = now;
+        previousFrames = process->frames_count;
+        if (now < -1) return -1.0f;
+        if (now == -1 || before < 0) return 0.0f;
+        const auto advance = now - before;
+        if (advance < static_cast<int64_t>(frames)) return -1.0f;
+        return static_cast<float>(
+            std::min(static_cast<double>(advance), steadyTimeScale) / steadyTimeScale);
     }
 
     void setModeForKey(uint8_t key) noexcept
@@ -229,6 +252,9 @@ private:
     std::atomic<Mode> mode { Mode::sleep };
     bool firstProcess = true;
     bool quietAwareAudible = false;
+    int64_t previousSteadyTime = -1;
+    uint32_t previousFrames = 0;
+    float steadyMark = 0.0f;
 };
 
 uint32_t pluginCount(const clap_plugin_factory_t*) { return 1; }
