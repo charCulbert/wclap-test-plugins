@@ -14,12 +14,15 @@ automation is in, with the colours it shows them in, and clears both when they e
 
 ## A correct host
 
-**Loads** the plug-in. When it maps the parameter to a control it calls `set_mapping` with `has_mapping` true, and
-output 0 reads `1` and the colour. When the parameter's automation is present, playing, recording or overriding it calls
-`set_automation` with that state, and output 1 reads it. When the mapping or automation goes away it calls them again
-with `false` or `CLAP_PARAM_INDICATION_AUTOMATION_NONE`. A host without `param_indication` leaves every channel at
-`-1`. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, parameter, every channel after each call,
-with and without a colour) on the native build under `ctest`.
+**Loads** the plug-in. Showing mappings and automation is the host's choice, and a host that shows neither, or has no
+`param_indication`, leaves every channel at `-1` and is still correct. A host that shows mappings or automation tells
+the plug-in through `param_indication`
+([`ext/param-indication.h`](../../external/clap/include/clap/ext/param-indication.h)). When it maps the parameter to a
+control it calls `set_mapping` with `has_mapping` true, and output 0 reads `1` and the colour. When the parameter's
+automation is present, playing, recording or overriding it calls `set_automation` with that state, and output 1 reads
+it. When the mapping or automation goes away it calls them again with `false` or
+`CLAP_PARAM_INDICATION_AUTOMATION_NONE`. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, parameter, every channel after each call,
+with a colour, with none, and with a transparent one) on the native build under `ctest`.
 
 ## Ports and parameter
 
@@ -41,7 +44,9 @@ plug-in returns `CLAP_PROCESS_CONTINUE` from every block.
 | Output 1 right | Colour of the last `set_automation` |
 
 A colour is written as `red * 65536 + green * 256 + blue`, for example `16744448` (`0xff8000`) for orange, or `-1`
-when the host passes no colour. Alpha is not shown. Values are exact in 32-bit floats. Every frame of a block holds
+when the host passes no colour. A colour with alpha 0, such as `CLAP_COLOR_TRANSPARENT`
+([`color.h`](../../external/clap/include/clap/color.h)), shows nothing, so it also reads `-1`. Other alpha values are
+not shown. Values are exact in 32-bit floats. Every frame of a block holds
 the same values, and both channels of each output have their `constant_mask` bits set. Values are read at the start
 of each block, and survive reactivation and `reset`.
 

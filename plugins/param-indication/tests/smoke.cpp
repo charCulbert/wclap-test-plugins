@@ -106,6 +106,14 @@ void runSmoke()
     indication->set_mapping(plugin, targetParamId, true, nullptr, nullptr, nullptr);
     expectOutput(plugin, { 1, -1, CLAP_PARAM_INDICATION_AUTOMATION_RECORDING, 0x0000ff },
                  "mapped without a colour");
+    // Alpha 0 shows nothing, so it reads as no colour.
+    const clap_color_t clearRed { 0, 255, 0, 0 };
+    indication->set_mapping(plugin, targetParamId, true, &CLAP_COLOR_TRANSPARENT, nullptr,
+                            nullptr);
+    indication->set_automation(plugin, targetParamId, CLAP_PARAM_INDICATION_AUTOMATION_PLAYING,
+                               &clearRed);
+    expectOutput(plugin, { 1, -1, CLAP_PARAM_INDICATION_AUTOMATION_PLAYING, -1 },
+                 "transparent colours");
     indication->set_automation(plugin, targetParamId, CLAP_PARAM_INDICATION_AUTOMATION_NONE,
                                nullptr);
     indication->set_mapping(plugin, targetParamId, false, nullptr, nullptr, nullptr);

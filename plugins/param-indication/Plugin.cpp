@@ -17,11 +17,13 @@ namespace
 constexpr char pluginId[] = TEST_PLUGIN_ID;
 constexpr clap_id targetParamId = 1;
 
-// 0xRRGGBB as an integer (exact in a float), or -1 for no colour. Alpha is
-// not shown.
+// 0xRRGGBB as an integer (exact in a float), or -1 for no colour. A fully
+// transparent colour (alpha 0, as CLAP_COLOR_TRANSPARENT) shows nothing, so it
+// reads -1 too. Other alpha values are not shown.
 int32_t encodeColor(const clap_color_t* color) noexcept
 {
-    return color ? (color->red << 16) | (color->green << 8) | color->blue : -1;
+    if (!color || color->alpha == 0) return -1;
+    return (color->red << 16) | (color->green << 8) | color->blue;
 }
 
 class ParamIndicationPlugin final
