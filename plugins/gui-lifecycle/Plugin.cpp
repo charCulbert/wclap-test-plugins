@@ -28,7 +28,22 @@ const char* mediaTypeFor(const std::string& path)
     if (extension == "css") return "text/css";
     if (extension == "js") return "text/javascript";
     if (extension == "txt") return "text/plain";
-    return "text/html";
+    if (extension == "html" || extension == "htm") return "text/html";
+    return "application/octet-stream";
+}
+
+// stream.h: a host may take fewer bytes per write than offered, so write until
+// all are taken. Fails on an error (negative) or a write that takes nothing.
+bool writeAll(const clap_ostream_t* stream, const uint8_t* bytes, size_t size)
+{
+    while (size > 0)
+    {
+        const auto written = stream->write(stream, bytes, size);
+        if (written <= 0) return false;
+        bytes += written;
+        size -= static_cast<size_t>(written);
+    }
+    return true;
 }
 
 class GuiPlugin final
@@ -106,9 +121,14 @@ protected:
         while (!relative.empty() && relative.front() == '/') relative.erase(relative.begin());
         if (relative.empty()) return false;
 
+        // entry.h: the entry path is the bundle on macOS, where resources sit in
+        // Contents/Resources, and the DSO file on Linux and Windows, where they
+        // sit in its directory. Under WASI it is the plug-in directory.
         std::ifstream input;
-        const std::array<std::string, 2> roots {
-            resourceRoot, resourceRoot + "/Contents/Resources"
+        const auto slash = resourceRoot.find_last_of("/\\");
+        const std::array<std::string, 3> roots {
+            resourceRoot, resourceRoot + "/Contents/Resources",
+            slash == std::string::npos ? std::string(".") : resourceRoot.substr(0, slash)
         };
         for (const auto& root : roots)
         {
@@ -124,17 +144,18 @@ protected:
             if (input) break;
             input.clear();
         }
-        if (!input) return false;
+        if (!input.is_open()) return false;
         std::vector<uint8_t> bytes(std::istreambuf_iterator<char>(input), {});
         if (mime && mimeCapacity)
             std::snprintf(mime, mimeCapacity, "%s", mediaTypeFor(relative));
-        return bytes.empty() || stream->write(stream, bytes.data(), bytes.size())
-            == static_cast<int64_t>(bytes.size());
+        return writeAll(stream, bytes.data(), bytes.size());
     }
 
     bool webviewReceive(const void* buffer, uint32_t size) const noexcept override
     {
-        if (!created || !visible || !buffer || size == 0) return false;
+        // The page may send as soon as it loads, which can be before show(), so
+        // messages are taken once the view is created and parented.
+        if (!created || !parented || !buffer || size == 0) return false;
         const auto command = static_cast<Command>(*static_cast<const uint8_t*>(buffer));
         const std::array<uint8_t, 2> reply {
             static_cast<uint8_t>(command),
