@@ -7,9 +7,9 @@ Plug-in ID: `com.charlieculbert.wclap-test-plugins.process-lifecycle`
 
 ## Proves
 
-The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances
-`steady_time` across skipped blocks, and reports finite and infinite tails (how long a plug-in keeps sounding after its
-input stops).
+The host honours every CLAP process status, wakes a sleeping plug-in on due events and on `request_process`, advances
+`steady_time` across skipped blocks, and reads finite and infinite tails (how long a plug-in keeps sounding after its
+input stops) when the plug-in reports a change.
 
 ## A correct host
 
@@ -18,7 +18,8 @@ input stops).
 "must be discarded". After that block it may stop processing the plug-in (**contain**). Whether it skips calls while
 the plug-in sleeps or its tail has run out is its own choice; the protocol says what each choice shows.
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side of each step (statuses, markers, steady-time advances,
-tail lengths, wake requests), once with MIDI note-ons and once with CLAP note-ons, on the native build under `ctest`.
+tail lengths, `tail.changed` calls, wake requests, `reset`), once with MIDI note-ons and once with CLAP note-ons, on the
+native build under `ctest`.
 
 ## Ports and markers
 
@@ -35,7 +36,8 @@ The note input, `Lifecycle controls`, takes CLAP and MIDI notes and prefers MIDI
 
 On its first call after `activate()` the plug-in writes `0.1`, requests `host.request_callback()`, and returns
 `CLAP_PROCESS_SLEEP`. In `on_main_thread()` it calls `host.request_process()`; that wake call writes `0.2` and sleeps
-again. Each activation starts the protocol over, in sleep mode.
+again. If that call also carries a note-on that selects a mode, the mode's marker and status win and no `0.2` block
+appears. Each activation starts the protocol over, in sleep mode.
 
 Note-ons select the remaining behaviour:
 
@@ -50,6 +52,11 @@ Note-ons select the remaining behaviour:
 
 A mode stays until the next note-on changes it, and the plug-in returns the same status on every call in that mode.
 
+The tail is 256 in key 60's mode, `INT32_MAX` in key 64's and 0 otherwise. Whenever it changes, the plug-in calls the
+host's `tail.changed` from `process()` ([`ext/tail.h`](../../external/clap/include/clap/ext/tail.h): "Tell the host
+that the tail has changed", `[audio-thread]`), if the host provides `clap.tail`. `tail.get` answers whether the plug-in
+is active or not: the header lets the host call it on the main thread or the audio thread with no active requirement.
+
 ### Steady-time output
 
 `steady_time` must be `-1` (not available) or at least `0`, and must grow by at least `frames_count` from one call to
@@ -62,6 +69,9 @@ the next ([`process.h`](../../external/clap/include/clap/process.h), comment on 
 | `advance / 65536` | The advance, capped at `1.0` (65536 frames) |
 | `-1` | The rule is broken: `steady_time` below `-1`, or it grew by less than the previous call's `frames_count` |
 
+`reset()` starts the comparison over, so the next call shows `0`: [`plugin.h`](../../external/clap/include/clap/plugin.h)
+says `steady_time` "may jump backward" after a reset.
+
 The header says `steady_time` "can be used to calculate the sleep duration between two process calls". A host whose
 counter keeps running while it skips calls shows the skipped frames in the advance; one that counts only processed
 frames shows `128 / 65536` after a gap. Both meet the rule; `-1` anywhere fails it. Output 1 is zero during key 61's
@@ -72,7 +82,7 @@ quiet block, so it does not keep `CONTINUE_IF_NOT_QUIET` awake.
 Use an offline render of at least 5248 frames with a 128-frame block (the render quantum) and route both outputs to
 separate captured channels. Run the requested main-thread callbacks between blocks, and record lifecycle diagnostics
 (processed and skipped blocks, status, sleeping state, and wake source) when available. Run it twice: once with MIDI
-note-ons, once with CLAP note-ons on note port 0. Both runs must give the same output. Schedule note-ons at these exact
+note-ons with non-zero velocity, once with CLAP note-ons on note port 0. Both runs must give the same output. Schedule note-ons at these exact
 frames:
 
 | Frame | Key | Status returned | Output 0 |
@@ -91,17 +101,19 @@ Pass/fail, whatever the host chooses below:
 
 - Every note-on is processed on its frame, including when the plug-in sleeps. `CLAP_PROCESS_SLEEP` means no more
   processing is required "until the next event", so a due event wakes it.
-- One `request_callback`/`on_main_thread` round trip leads to one `request_process` and one processed call, the
-  `0.2` block.
 - Output 1 is never `-1`.
 - Neither output contains `9.0`. After the error block the host may stop processing the plug-in.
-- The tail the host reads is 256 after key 60 and `>= INT32_MAX` after key 64.
+- The tail the host reads is 256 after key 60 and `>= INT32_MAX` after key 64. The plug-in calls `tail.changed` at
+  2048, 3072 and 3584 (back to 0).
 
 Host choices and what each shows:
 
-- **Startup.** The `0.1` block is frames 0–127. The `0.2` block is the first block after the host services the
-  callback: frames 128–255 if it does so between the first two blocks. A host that services it later shifts only the
-  `0.2` block.
+- **Startup.** The `0.1` block is frames 0–127. One `request_callback`/`on_main_thread` round trip leads to one
+  `request_process`. [`host.h`](../../external/clap/include/clap/host.h) calls it a request ("Request the host to
+  activate and start processing the plugin"), so honouring it is the expected behaviour but not a requirement. A host
+  that honours it shows the `0.2` block as the first block after it services the callback: frames 128–255 if it does so
+  between the first two blocks. A host that services it later shifts only the `0.2` block; one that ignores the request
+  shows no `0.2` block.
 - **Sleep (`CLAP_PROCESS_SLEEP`, keys 62 and startup).** CLAP allows the host to skip calls until the next event; it
   does not require it. A host that skips shows silence for the skipped blocks. One that keeps processing shows `0`
   there too, from real calls, which its diagnostics tell apart.

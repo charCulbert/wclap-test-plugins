@@ -40,6 +40,24 @@ public:
         : Base(&descriptor(), host), host(host) {}
 
 protected:
+    bool init() noexcept override
+    {
+        // clap-helpers does not fetch clap_host_tail, so fetch it here.
+        const auto* tail = static_cast<const clap_host_tail_t*>(
+            host->get_extension(host, CLAP_EXT_TAIL));
+        hostTail = tail && tail->changed ? tail : nullptr;
+        return true;
+    }
+
+    // Our own clap.tail: CLAP allows tail.get on the main thread whether or not
+    // the plug-in is active (ext/tail.h), and the helpers' version reports a
+    // call while inactive as host misbehaviour.
+    const void* extension(const char* id) noexcept override
+    {
+        if (id && std::strcmp(id, CLAP_EXT_TAIL) == 0) return &tailExtension;
+        return nullptr;
+    }
+
     bool activate(double, uint32_t, uint32_t) noexcept override
     {
         // Each activation runs the protocol from the start.
@@ -50,9 +68,18 @@ protected:
         mode.store(Mode::sleep, std::memory_order_relaxed);
         mainThreadWakePending.store(false, std::memory_order_relaxed);
         requestedWakeProof.store(false, std::memory_order_relaxed);
+        reportedTail = tailGet();
         return true;
     }
     bool startProcessing() noexcept override { return true; }
+
+    // plugin.h: after reset, steady_time may jump backward, so the comparison
+    // starts over.
+    void reset() noexcept override
+    {
+        previousSteadyTime = -1;
+        previousFrames = 0;
+    }
 
     clap_process_status process(const clap_process_t* process) noexcept override
     {
@@ -63,8 +90,9 @@ protected:
 
         std::fill_n(signal, process->frames_count, 0.0f);
         std::fill_n(steady, process->frames_count, 0.0f);
-        applyEvents(process->in_events);
+        const bool modeChanged = applyEvents(process->in_events);
         steadyMark = steadyTimeAdvance(process);
+        reportTailChange();
 
         if (firstProcess)
         {
@@ -75,7 +103,8 @@ protected:
             host->request_callback(host);
             return CLAP_PROCESS_SLEEP;
         }
-        if (requestedWakeProof.exchange(false, std::memory_order_acq_rel))
+        // A note-on in the woken block sets the mode, and the mode's marker wins.
+        if (requestedWakeProof.exchange(false, std::memory_order_acq_rel) && !modeChanged)
         {
             fill(signal, process->frames_count, 0.2f);
             fill(steady, process->frames_count, steadyMark);
@@ -205,7 +234,23 @@ private:
             std::min(static_cast<double>(advance), steadyTimeScale) / steadyTimeScale);
     }
 
-    void setModeForKey(uint8_t key) noexcept
+    // ext/tail.h: tell the host whenever the tail changes.
+    void reportTailChange() noexcept
+    {
+        const auto tail = tailGet();
+        if (tail == reportedTail) return;
+        reportedTail = tail;
+        if (hostTail) hostTail->changed(host);
+    }
+
+    static uint32_t clapTailGet(const clap_plugin_t* plugin) noexcept
+    {
+        const auto* base = static_cast<const Base*>(plugin->plugin_data);
+        return static_cast<const ProcessLifecyclePlugin*>(base)->tailGet();
+    }
+
+    // Returns whether the key selects a mode.
+    bool setModeForKey(uint8_t key) noexcept
     {
         switch (key)
         {
@@ -218,12 +263,15 @@ private:
             case 63: mode.store(Mode::continuous, std::memory_order_relaxed); break;
             case 64: mode.store(Mode::infiniteTail, std::memory_order_relaxed); break;
             case 65: mode.store(Mode::error, std::memory_order_relaxed); break;
-            default: break;
+            default: return false;
         }
+        return true;
     }
 
-    void applyEvents(const clap_input_events_t* events) noexcept
+    // Returns whether a note-on selected a mode.
+    bool applyEvents(const clap_input_events_t* events) noexcept
     {
+        bool modeChanged = false;
         const auto count = events ? events->size(events) : 0;
         for (uint32_t index = 0; index < count; ++index)
         {
@@ -234,19 +282,23 @@ private:
             {
                 const auto& event = *reinterpret_cast<const clap_event_midi_t*>(header);
                 if ((event.data[0] & 0xf0) == 0x90 && event.data[2] != 0)
-                    setModeForKey(event.data[1]);
+                    modeChanged |= setModeForKey(event.data[1]);
             }
             else if (header->type == CLAP_EVENT_NOTE_ON
                      && header->size >= sizeof(clap_event_note_t))
             {
                 const auto& event = *reinterpret_cast<const clap_event_note_t*>(header);
                 if (event.key >= 0 && event.key <= 127)
-                    setModeForKey(static_cast<uint8_t>(event.key));
+                    modeChanged |= setModeForKey(static_cast<uint8_t>(event.key));
             }
         }
+        return modeChanged;
     }
 
     const clap_host_t* host = nullptr;
+    const clap_plugin_tail_t tailExtension { clapTailGet };
+    const clap_host_tail_t* hostTail = nullptr;
+    uint32_t reportedTail = 0;
     std::atomic<bool> mainThreadWakePending { false };
     std::atomic<bool> requestedWakeProof { false };
     std::atomic<Mode> mode { Mode::sleep };

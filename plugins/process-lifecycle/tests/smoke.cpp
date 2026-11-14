@@ -1,6 +1,7 @@
 #include "Plugin.h"
 
 #include <clap/ext/audio-ports.h>
+#include <clap/ext/log.h>
 #include <clap/ext/note-ports.h>
 #include <clap/ext/tail.h>
 #include <clap/factory/plugin-factory.h>
@@ -25,9 +26,32 @@ struct HostState
 {
     uint32_t processRequests = 0;
     uint32_t callbackRequests = 0;
+    uint32_t tailChanges = 0;
 };
 
-const void* hostGetExtension(const clap_host_t*, const char*) { return nullptr; }
+uint32_t misbehaviourLogs = 0;
+
+void hostTailChanged(const clap_host_t* host)
+{
+    ++static_cast<HostState*>(host->host_data)->tailChanges;
+}
+void hostLog(const clap_host_t*, clap_log_severity severity, const char* message)
+{
+    if (severity == CLAP_LOG_HOST_MISBEHAVING || severity == CLAP_LOG_PLUGIN_MISBEHAVING)
+    {
+        ++misbehaviourLogs;
+        std::fprintf(stderr, "misbehaviour logged: %s\n", message);
+    }
+}
+const clap_host_tail_t hostTail { hostTailChanged };
+const clap_host_log_t hostLogExtension { hostLog };
+
+const void* hostGetExtension(const clap_host_t*, const char* id)
+{
+    if (std::strcmp(id, CLAP_EXT_TAIL) == 0) return &hostTail;
+    if (std::strcmp(id, CLAP_EXT_LOG) == 0) return &hostLogExtension;
+    return nullptr;
+}
 void hostRequestRestart(const clap_host_t*) {}
 void hostRequestProcess(const clap_host_t* host)
 {
@@ -183,18 +207,26 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_tail_t* tail, Ho
     requireConstant(block.signal, 0.0f, "quiet-aware signal was not quiet");
     requireConstant(block.steady, 0.0f, "quiet-aware diagnostic output was not quiet");
 
+    require(state.tailChanges == 0, "tail.changed called while the tail stayed 0");
     require(block.run(plugin, t0 + 10 * blockSize, 60) == CLAP_PROCESS_TAIL,
             "finite tail status mismatch");
     require(tail->get(plugin) == 256, "finite tail length mismatch");
+    require(state.tailChanges == 1, "tail.changed not called when the tail became 256");
     requireConstant(block.signal, 0.3f, "finite tail marker mismatch");
 
     require(block.run(plugin, t0 + 11 * blockSize, 64) == CLAP_PROCESS_TAIL,
             "infinite tail status mismatch");
     require(tail->get(plugin) >= 0x7fffffffU, "infinite tail length mismatch");
+    require(state.tailChanges == 2, "tail.changed not called when the tail became infinite");
     requireConstant(block.signal, 0.6f, "infinite tail marker mismatch");
 
+    // plugin.h: steady_time may jump backward after reset.
+    plugin->reset(plugin);
+    require(block.run(plugin, t0) == CLAP_PROCESS_TAIL, "tail status mismatch after reset");
+    requireConstant(block.steady, 0.0f, "steady time comparison did not restart on reset");
+
     // Broken steady time: no growth is marked -1; not available (-1) is 0.
-    require(block.run(plugin, t0 + 11 * blockSize) == CLAP_PROCESS_TAIL, "tail status mismatch");
+    require(block.run(plugin, t0) == CLAP_PROCESS_TAIL, "tail status mismatch");
     requireConstant(block.steady, -1.0f, "steady time that did not grow was not marked");
     require(block.run(plugin, -1) == CLAP_PROCESS_TAIL, "tail status mismatch");
     requireConstant(block.steady, 0.0f, "unavailable steady time was not 0");
@@ -202,6 +234,7 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_tail_t* tail, Ho
     require(block.run(plugin, -1, 65) == CLAP_PROCESS_ERROR, "error status mismatch");
     requireConstant(block.signal, 9.0f, "error poison marker mismatch");
     requireConstant(block.steady, 9.0f, "error poison diagnostic mismatch");
+    require(state.tailChanges == 3, "tail.changed not called when the tail went back to 0");
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
@@ -244,10 +277,32 @@ void runSmoke()
             "note port mismatch");
     require(tail, "tail extension missing");
 
+    // ext/tail.h: tail.get has no active requirement.
+    require(tail->get(plugin) == 0, "tail while inactive mismatch");
+
     // The port takes both dialects, so the host may send either; the second
     // activation also checks that the protocol starts over.
     runProtocol(plugin, tail, state, Dialect::midi);
     runProtocol(plugin, tail, state, Dialect::clap);
+
+    // A note-on in the block the wake request brings sets the mode; its marker
+    // wins over 0.2.
+    state = {};
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), "activate failed");
+    require(plugin->start_processing(plugin), "start processing failed");
+    Block block;
+    require(block.run(plugin, 0) == CLAP_PROCESS_SLEEP, "initial status mismatch");
+    plugin->on_main_thread(plugin);
+    require(block.run(plugin, blockSize, 63) == CLAP_PROCESS_CONTINUE,
+            "note-on in the woken block did not set the mode");
+    requireConstant(block.signal, 0.5f, "note-on in the woken block lost to the 0.2 marker");
+    require(block.run(plugin, 2 * blockSize) == CLAP_PROCESS_CONTINUE,
+            "no 0.2 block should follow");
+    requireConstant(block.signal, 0.5f, "a late 0.2 block followed");
+    plugin->stop_processing(plugin);
+    plugin->deactivate(plugin);
+    require(tail->get(plugin) == 0, "tail while inactive mismatch");
+    require(misbehaviourLogs == 0, "a permitted call was logged as misbehaviour");
 
     plugin->destroy(plugin);
     clap_entry.deinit();
