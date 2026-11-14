@@ -18,6 +18,7 @@ identical code.
 | [`remote-controls`](plugins/remote-controls/README.md) | The host reads a plug-in's remote-control pages, maps each control to the parameter the page names, and reads the pages again when the plug-in calls `remote_controls.changed`. |
 | [`render`](plugins/render/README.md) | The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
 | [`state-context`](plugins/state-context/README.md) | The host saves and loads a plug-in's state through `state_context` with the context that matches what it is doing: `CLAP_STATE_CONTEXT_FOR_PRESET` for a preset, `CLAP_STATE_CONTEXT_FOR_DUPLICATE` when it copies the plug-in, and `CLAP_STATE_CONTEXT_FOR_PROJECT` for a project. |
+| [`voice-info`](plugins/voice-info/README.md) | The host reads a plug-in's voice info while it is active and reads it again when the plug-in calls `voice_info.changed`. |
 
 Each plug-in's README says what a correct host does with it: load it, reject it, or contain it (stop processing it
 safely; see process-lifecycle's README).
