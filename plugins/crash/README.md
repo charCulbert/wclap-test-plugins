@@ -1,7 +1,8 @@
 # crash
 
 A GUI-free plug-in that crashes on request. Inside `process()` it executes a trap the moment the host sets its `Crash`
-parameter to `1`. Until then the effect passes its input through and the instrument writes a constant. In a WCLAP the
+parameter to `1` with a parameter event, or on the next `process()` call when the value arrives through `params.flush`.
+Until then the effect passes its input through and the instrument writes a constant. In a WCLAP the
 trap is a real WebAssembly trap (`unreachable`), so a host test can check how the host contains a plug-in that dies
 mid-block. The bundle holds two plug-ins that differ only in their ports. Native CLAP and WCLAP compile the same
 [`Plugin.cpp`](Plugin.cpp) and [`Entry.cpp`](Entry.cpp); the sources contain no Wasm-specific branches or APIs.
@@ -51,9 +52,11 @@ Neither plug-in has a note port. Both return `CLAP_PROCESS_CONTINUE` on every bl
 ports above with buffers, and `CLAP_PROCESS_ERROR` otherwise.
 
 One parameter, `Crash`: ID `0`, range 0 to 1, default 0, stepped, automatable. Its text is `Off` for 0 and `Crash` for
-1, and `text_to_value` takes only those two words. A value is rounded to the nearest whole number and clamped to 0 to 1,
-so anything from `0.5` up, including values past `1`, sets it to `1`, and anything below `0.5` to `0`.
-`params.get_value` returns the rounded value.
+1, and `text_to_value` takes only those two words. Being stepped, a value converts to a whole number by truncation
+([`ext/params.h`](../../external/clap/include/clap/ext/params.h): "converted to integer using a cast (equivalent to
+trunc)"), then clamps to 0 to 1. So only values of `1` or more, such as `1` or `1.7`, set it to `1`; anything below
+`1`, including `0.5`, `0.99` and negative values, sets it to `0`, and so does NaN. `params.get_value` returns the
+converted value.
 
 ## Output
 
@@ -68,8 +71,8 @@ Before the crash:
 
 **The trap.** `process()` traps:
 
-- on the first `CLAP_EVENT_PARAM_VALUE` in its input events that sets `Crash` to `1` (after rounding), whatever its
-  frame, after writing the block's output; or
+- on the first `CLAP_EVENT_PARAM_VALUE` in its input events that sets `Crash` to `1` (a value of `1` or more),
+  whatever its frame, after writing the block's output; or
 - at the start of the call, before it writes anything, when `Crash` is already `1`: set through `params.flush` before
   the block. `params.flush` stores the value and does not trap.
 
@@ -90,9 +93,6 @@ Run it once with each plug-in, as a WCLAP.
 
 ## Validators
 
-A validator that fuzzes parameters sets `Crash` to `1` and gets a trap, as designed. With
-`clap-host --strict validate.run --isolate`, these tests end in the trap for both plug-ins, as `crashed` on a native
-build and as `failed` with `process() returned CLAP_PROCESS_ERROR` on a WCLAP: `param-gesture-pairs`, `param-fuzz-basic`,
-`param-fuzz-bounds`, `param-fuzz-beyond`, `param-fuzz-sample-accurate` and `param-fuzz-no-cookies`. Every other test
-passes or skips. CI does not run a validator; it builds the plug-ins and runs `ctest`, whose smoke test never sets
-`Crash`.
+A validator that fuzzes parameters sets `Crash` to `1`, and the plug-in traps, as designed. Exclude this plug-in from
+parameter fuzzing. CI does not run a validator; it builds the plug-ins and runs `ctest`, whose smoke test never sets
+`Crash` to `1` in `process()`.

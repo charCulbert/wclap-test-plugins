@@ -8,6 +8,7 @@
 #include <clap/factory/plugin-factory.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -61,6 +62,19 @@ struct EventList
         event.key = -1;
         event.value = value;
         list.push_back(event);
+    }
+};
+
+// Output events from flush; the plug-in sends none.
+struct OutputList
+{
+    uint32_t pushed = 0;
+    clap_output_events_t events { this, push };
+
+    static bool push(const clap_output_events_t* events, const clap_event_header_t*)
+    {
+        ++static_cast<OutputList*>(events->ctx)->pushed;
+        return true;
     }
 };
 
@@ -140,14 +154,26 @@ void checkPlugin(const clap_plugin_factory_t* factory, const clap_host_t& host, 
     require(!params->text_to_value(plugin, crashParamId, "junk", &value),
             name + ": junk text accepted");
 
+    // A stepped value converts by truncation (ext/params.h): 1.7 is 1, 0.5 is 0, NaN is 0.
+    const auto textFor = [&](double v) {
+        require(params->value_to_text(plugin, crashParamId, v, text, sizeof(text)),
+                name + ": value_to_text failed");
+        return std::string(text);
+    };
+    require(textFor(1.7) == "Crash" && textFor(0.5) == "Off" && textFor(0.99) == "Off"
+                && textFor(std::nan("")) == "Off" && textFor(-0.5) == "Off",
+            name + ": value_to_text does not truncate");
+
     require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), name + ": activate failed");
     require(plugin->start_processing(plugin), name + ": start processing failed");
 
-    // Crash at 0, a value that rounds to 0, and another parameter's ID: no trap.
+    // Crash at 0, values that truncate to 0, NaN, and another parameter's ID: no trap.
     EventList events;
     events.value(4, 0.0);
-    events.value(8, 0.25);
+    events.value(8, 0.5);
+    events.value(10, 0.99);
     events.value(12, -3.0);
+    events.value(14, std::nan(""));
     events.value(16, 1.0, 7);
     Block block;
     require(block.run(plugin, !instrument, events) == CLAP_PROCESS_CONTINUE,
@@ -160,7 +186,7 @@ void checkPlugin(const clap_plugin_factory_t* factory, const clap_host_t& host, 
                 name + ": output mismatch at frame " + std::to_string(frame));
     }
     require(params->get_value(plugin, crashParamId, &value) && value == 0.0,
-            name + ": Crash is not 0 after rounding");
+            name + ": Crash is not 0 after truncation");
 
     // In place: the effect leaves a shared buffer as it is.
     if (!instrument)
@@ -169,24 +195,32 @@ void checkPlugin(const clap_plugin_factory_t* factory, const clap_host_t& host, 
         EventList none;
         require(block.run(plugin, true, none) == CLAP_PROCESS_CONTINUE,
                 name + ": in-place status mismatch");
-        require(block.inLeft[10] == 0.25f + 10 / 128.0f, name + ": in-place output changed");
+        for (uint32_t frame = 0; frame < blockSize; ++frame)
+            require(block.inLeft[frame] == 0.25f + frame / 128.0f
+                        && block.inRight[frame] == -0.5f + frame / 256.0f,
+                    name + ": in-place output changed at frame " + std::to_string(frame));
         block.outputChannels = { block.left.data(), block.right.data() };
     }
 
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
 
-    // flush stores Crash without trapping. Set it back before any process call.
-    EventList flush;
-    flush.value(0, 1.0);
-    params->flush(plugin, &flush.events, nullptr);
-    require(params->get_value(plugin, crashParamId, &value) && value == 1.0,
-            name + ": flush did not store Crash");
-    EventList reset;
-    reset.value(0, 0.0);
-    params->flush(plugin, &reset.events, nullptr);
-    require(params->get_value(plugin, crashParamId, &value) && value == 0.0,
-            name + ": flush did not clear Crash");
+    // flush stores Crash without trapping; 1.7 would trap on the next process
+    // call, so it is checked through get_value and set back before any.
+    OutputList out;
+    const auto flushValue = [&](double v) {
+        EventList list;
+        list.value(0, v);
+        params->flush(plugin, &list.events, &out.events);
+        double stored = -1.0;
+        require(params->get_value(plugin, crashParamId, &stored), name + ": get_value failed");
+        return stored;
+    };
+    require(flushValue(1.7) == 1.0, name + ": flush did not store 1.7 as 1");
+    require(flushValue(0.5) == 0.0, name + ": flush did not store 0.5 as 0");
+    require(flushValue(1.0) == 1.0, name + ": flush did not store Crash");
+    require(flushValue(std::nan("")) == 0.0, name + ": flush did not store NaN as 0");
+    require(out.pushed == 0, name + ": flush sent output events");
 
     plugin->destroy(plugin);
 }

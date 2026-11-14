@@ -41,11 +41,11 @@ const clap_plugin_descriptor_t descriptors[] {
 
 constexpr uint32_t descriptorCount = sizeof(descriptors) / sizeof(descriptors[0]);
 
-// The parameter is stepped, so a value is rounded to 0 or 1; out-of-range
-// values are clamped.
+// The parameter is stepped, so a value converts to a whole number by
+// truncation (ext/params.h), then clamps to 0 or 1. NaN reads 0.
 double step(double value) noexcept
 {
-    return std::isnan(value) ? 0.0 : std::clamp(std::round(value), 0.0, 1.0);
+    return std::isnan(value) ? 0.0 : std::clamp(std::trunc(value), 0.0, 1.0) + 0.0;
 }
 
 [[noreturn]] void trap() noexcept
