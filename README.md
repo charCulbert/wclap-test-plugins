@@ -14,6 +14,7 @@ identical code.
 | [`note-name`](plugins/note-name/README.md) | The host reads a plug-in's note names, including a name for any key (`-1`), and reads them again when the plug-in calls `note_name.changed`. |
 | [`probe`](plugins/probe/README.md) | The host delivers note, parameter, modulation and note-expression events on their exact frame, with their exact values, to the right voices. |
 | [`process-lifecycle`](plugins/process-lifecycle/README.md) | The host honours every CLAP process status, wakes a sleeping plug-in on `request_process` and on due events, advances `steady_time` across skipped blocks, and reports finite and infinite tails (how long a plug-in keeps sounding after its input stops). |
+| [`remote-controls`](plugins/remote-controls/README.md) | The host reads a plug-in's remote-control pages, maps each control to the parameter the page names, and reads the pages again when the plug-in calls `remote_controls.changed`. |
 | [`render`](plugins/render/README.md) | The host calls `render.set` with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
 
 Each plug-in's README says what a correct host does with it: load it, reject it, or contain it (stop processing it
