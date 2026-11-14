@@ -9,9 +9,9 @@ Plug-in ID: `com.charlieculbert.wclap-test-plugins.state-context`
 
 ## Proves
 
-The host saves and loads a plug-in's state through `state_context` with the context that matches what it is doing:
+Which call and context the host uses to save and load a plug-in's state: `state_context` with
 `CLAP_STATE_CONTEXT_FOR_PRESET` for a preset, `CLAP_STATE_CONTEXT_FOR_DUPLICATE` when it copies the plug-in, and
-`CLAP_STATE_CONTEXT_FOR_PROJECT` for a project.
+`CLAP_STATE_CONTEXT_FOR_PROJECT` for a project, or plain `state`.
 
 ## A correct host
 
