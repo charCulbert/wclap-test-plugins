@@ -22,8 +22,8 @@ host's choice: a host that sends none shows each block's transport on every fram
 passes a null `transport` ([`process.h`](../../external/clap/include/clap/process.h): "If null, then this is a free
 running host, no transport events will be provided"), and every channel but the event count reads `-1`.
 [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, every channel from the block's transport and from
-events, two events on one frame, withheld fields, a null transport, an event past the block) on the native build under
-`ctest`.
+events, two events on one frame, withheld fields, a null transport, an event past the block, an event too short to be
+a transport) on the native build under `ctest`.
 
 ## Ports
 
@@ -78,7 +78,11 @@ Read the flags first: a `0` in, say, the tempo channel with flag `1` clear means
 | `CLAP_TRANSPORT_HAS_SECONDS_TIMELINE` | `song_pos_seconds`, `loop_start_seconds`, `loop_end_seconds` |
 | `CLAP_TRANSPORT_HAS_TIME_SIGNATURE` | `tsig_num`, `tsig_denom` |
 
-The loop points are written whatever `CLAP_TRANSPORT_IS_LOOP_ACTIVE` says, as the host sent them.
+[`events.h`](../../external/clap/include/clap/events.h) names a flag for tempo, the beats timeline, the seconds
+timeline and the time signature, but does not say which flag covers `bar_start`, `bar_number` or the loop points.
+Putting `bar_start`, `bar_number` and the loop points in beats under `CLAP_TRANSPORT_HAS_BEATS_TIMELINE`, and the loop
+points in seconds under `CLAP_TRANSPORT_HAS_SECONDS_TIMELINE`, is this plug-in's choice. The loop points are written
+whatever `CLAP_TRANSPORT_IS_LOOP_ACTIVE` says, as the host sent them.
 
 **No transport.** When the block's `transport` is null, every channel but the event count reads `-1` from frame 0, until
 a transport event in that block (which a host with no transport should not send) replaces it. `flags` never reads `-1`

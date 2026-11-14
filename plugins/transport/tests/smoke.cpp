@@ -262,6 +262,15 @@ void runSmoke()
     block.expect(songPosBeats, 0, blockSize, 4.5f, "next block's beats");
     block.expect(events, 0, blockSize, 0.0f, "next block has no event");
 
+    // A transport event whose size is below sizeof(clap_event_transport) is ignored.
+    EventList shortEvent;
+    shortEvent.add(transport(8, playing, 9.0, 4.5, 60.0, 0.0, 8.0, 2, 3, 4, 0.0, 0.0));
+    shortEvent.list.back().header.size = sizeof(clap_event_transport_t) - 1;
+    require(block.run(plugin, &start, shortEvent) == CLAP_PROCESS_CONTINUE, "status mismatch");
+    block.expect(events, 0, blockSize, 0.0f, "short event counted");
+    block.expect(songPosBeats, 0, blockSize, 4.5f, "short event applied");
+    block.expect(tempo, 0, blockSize, 120.0f, "short event applied");
+
     // Exactness: a beat position with 24 significant bits survives.
     const auto fine = transport(0, allFields, 1.0 + 1.0 / 1024.0, 0.0, 133.25, 0.0, 0.0, 0, 4,
                                 4, 0.0, 0.0);
