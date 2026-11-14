@@ -27,6 +27,10 @@ headers require is pass/fail, with the header cited; where CLAP leaves a choice 
 choice shows. process-lifecycle and audio-ports-activation also say when a host may stop processing a plug-in after
 `CLAP_PROCESS_ERROR` (contain it).
 
+No plug-in ends the host's process on a call it does not expect. A call made in the wrong state or with an unknown ID
+or index is refused (the plug-in returns `false`, `0` or nothing) and reported through the host's `clap.log`, if it
+has one, at `CLAP_LOG_HOST_MISBEHAVING`. Each README names the refusals that matter for its test.
+
 Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`. `midi-echo` also holds two more plug-ins,
 `com.charlieculbert.wclap-test-plugins.midi-echo.midi2` and `com.charlieculbert.wclap-test-plugins.midi-echo.clap`.
 

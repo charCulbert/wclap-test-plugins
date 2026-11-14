@@ -17,10 +17,10 @@ constexpr char pluginId[] = TEST_PLUGIN_ID;
 constexpr uint32_t voiceCapacity = 8;
 
 class VoiceInfoPlugin final
-    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                    clap::helpers::CheckingLevel::Minimal>
 {
-    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                        clap::helpers::CheckingLevel::Minimal>;
 
 public:

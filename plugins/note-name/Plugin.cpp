@@ -21,10 +21,10 @@ constexpr std::array<const char*, 4> names { "Kick", "Snare", "Closed hi-hat", "
 constexpr char kit1Key38[] = "Rim";
 
 class NoteNamePlugin final
-    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                    clap::helpers::CheckingLevel::Minimal>
 {
-    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                        clap::helpers::CheckingLevel::Minimal>;
 
 public:

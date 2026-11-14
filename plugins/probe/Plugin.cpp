@@ -49,10 +49,10 @@ const Event* as(const clap_event_header_t* header) noexcept
 }
 
 class ProbePlugin final
-    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                    clap::helpers::CheckingLevel::Minimal>
 {
-    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                        clap::helpers::CheckingLevel::Minimal>;
 
 public:

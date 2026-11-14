@@ -21,10 +21,10 @@ constexpr clap_id mainPageId = 1;
 constexpr clap_id presetPageId = 2;
 
 class RemoteControlsPlugin final
-    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    : public clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                    clap::helpers::CheckingLevel::Minimal>
 {
-    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Terminate,
+    using Base = clap::helpers::Plugin<clap::helpers::MisbehaviourHandler::Ignore,
                                        clap::helpers::CheckingLevel::Minimal>;
 
 public:
