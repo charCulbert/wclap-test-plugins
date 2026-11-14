@@ -133,7 +133,8 @@ void runSmoke()
     require(notePorts && notePorts->count(plugin, true) == 1
                 && notePorts->count(plugin, false) == 0
                 && notePorts->get(plugin, 0, true, &noteInfo)
-                && (noteInfo.supported_dialects & CLAP_NOTE_DIALECT_MIDI),
+                && noteInfo.supported_dialects == CLAP_NOTE_DIALECT_MIDI
+                && noteInfo.preferred_dialect == CLAP_NOTE_DIALECT_MIDI,
             "note port mismatch");
     require(voiceInfo != nullptr, "no voice-info extension");
 
@@ -143,13 +144,13 @@ void runSmoke()
     require(plugin->start_processing(plugin), "start processing failed");
 
     EventList events;
-    events.midi(8, 0xc0, 1);  // already 4 voices: no change
-    events.midi(10, 0xc3, 0); // 1 voice
-    events.midi(20, 0xc0, 0); // still 1
+    events.midi(4, 0xc0, 1);  // already 4 voices: no change
+    events.midi(8, 0xc0, 0);  // 1 voice, as in the README
+    events.midi(20, 0xc3, 0); // any channel, still 1
     Block block;
     block.run(plugin, events);
-    expect(block.left, 0, 10, 4.0f, "4 voices");
-    expect(block.left, 10, blockSize, 1.0f, "1 voice from the program change");
+    expect(block.left, 0, 8, 4.0f, "4 voices");
+    expect(block.left, 8, blockSize, 1.0f, "1 voice from the program change");
     expect(block.right, 0, blockSize, 1.0f, "one read so far");
     require(callbackRequests == 1, "request_callback count is " + std::to_string(callbackRequests));
 
@@ -170,7 +171,19 @@ void runSmoke()
     require(infoChanged == 2, "voice_info.changed not called for the second change");
     expectInfo(plugin, voiceInfo, 8, "after program 9");
 
+    // A change still pending at deactivate is not reported while inactive.
+    EventList last;
+    last.midi(0, 0xc0, 1);
+    block.run(plugin, last);
+    require(callbackRequests == 3, "no request_callback for the third change");
     plugin->stop_processing(plugin);
+    plugin->deactivate(plugin);
+    plugin->on_main_thread(plugin);
+    require(infoChanged == 2, "voice_info.changed called while inactive");
+    require(plugin->activate(plugin, 48'000.0, blockSize, blockSize), "reactivate failed");
+    plugin->on_main_thread(plugin);
+    require(infoChanged == 2, "voice_info.changed called for a change dropped at deactivate");
+    expectInfo(plugin, voiceInfo, 4, "after program 1 and reactivation");
     plugin->deactivate(plugin);
     plugin->destroy(plugin);
     clap_entry.deinit();

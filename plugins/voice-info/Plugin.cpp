@@ -35,6 +35,13 @@ protected:
     }
 
     bool activate(double, uint32_t, uint32_t) noexcept override { return true; }
+    // A change not yet reported is dropped: the host may only call
+    // voice_info.get while the plug-in is active, and reads it afresh after
+    // the next activate.
+    void deactivate() noexcept override
+    {
+        changePending.store(false, std::memory_order_release);
+    }
     bool startProcessing() noexcept override { return true; }
 
     clap_process_status process(const clap_process_t* process) noexcept override
@@ -68,7 +75,10 @@ protected:
 
     void onMainThread() noexcept override
     {
-        if (changePending.exchange(false, std::memory_order_acq_rel) && hostVoiceInfo)
+        // voice_info.get is [main-thread & active], so changed is only called
+        // when the host could act on it.
+        if (changePending.exchange(false, std::memory_order_acq_rel) && hostVoiceInfo
+            && isActive())
             hostVoiceInfo->changed(host);
     }
 
@@ -96,8 +106,9 @@ protected:
         if (!isInput || index != 0 || !info) return false;
         *info = {};
         info->id = 0;
-        info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
-        info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+        // Program change exists only in MIDI, and the plug-in plays no notes.
+        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI;
+        info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI;
         std::snprintf(info->name, sizeof(info->name), "Program change");
         return true;
     }
