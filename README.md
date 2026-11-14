@@ -37,8 +37,8 @@ native host's process. Load its native builds only to check behaviour before the
 fuzzing.
 
 Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`. `midi-echo` also holds two more plug-ins,
-`com.charlieculbert.wclap-test-plugins.midi-echo.midi2` and `com.charlieculbert.wclap-test-plugins.midi-echo.clap`. `crash` also holds
-`com.charlieculbert.wclap-test-plugins.crash.instrument`.
+`com.charlieculbert.wclap-test-plugins.midi-echo.midi2` and `com.charlieculbert.wclap-test-plugins.midi-echo.clap`.
+`crash` also holds `com.charlieculbert.wclap-test-plugins.crash.instrument`.
 
 ## Download
 
