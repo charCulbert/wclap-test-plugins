@@ -15,14 +15,17 @@ The host reads a plug-in's voice info while it is active and reads it again when
 
 ## A correct host
 
-**Loads** the plug-in and reads its voice info after activating it: 4 voices of 8, overlapping notes supported. After a
-program change it services the plug-in's `request_callback`, receives `voice_info.changed` from `on_main_thread`, and
-reads the voice info again, so the host now knows the new count. A host that reads the voice info once and ignores
-`changed` keeps the old count. A host that calls `voice_info.get` while the plug-in is inactive breaks the CLAP
-contract: `get` is `[main-thread & active]` ([`ext/voice-info.h`](../../external/clap/include/clap/ext/voice-info.h)).
-The protocol's program change needs a host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks
-the plug-in's side (ports, each voice count's info, the output, one `request_callback` and one `changed` per change, no
-`changed` while inactive) on the native build under `ctest`.
+**Loads** the plug-in. If it reads the voice info, it does so while the plug-in is active: `get` is
+`[main-thread & active]` ([`ext/voice-info.h`](../../external/clap/include/clap/ext/voice-info.h)), and a host that
+calls it while the plug-in is inactive breaks the CLAP contract. The first read gives 4 voices of 8.
+
+After a program change the plug-in calls `request_callback` and then, from `on_main_thread`, `voice_info.changed`. The
+header says only that `changed` "informs the host that the voice info has changed"; it does not say what the host does
+next. Reading the voice info again while the plug-in is active is the expected response, and a host that does so knows
+the new count. A host that ignores `changed` keeps the old count; that is a host choice, not a failure. The protocol's
+program change needs a host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's
+side (ports, each voice count's info, the output, one `request_callback` and one `changed` per change, including a
+change still pending at deactivate) on the native build under `ctest`.
 
 ## Ports
 
@@ -38,10 +41,13 @@ and there are no parameters. The plug-in returns `CLAP_PROCESS_CONTINUE` from ev
 
 | Program | `voice_count` | `voice_capacity` | `flags` |
 | --- | ---: | ---: | --- |
-| None yet | 4 | 8 | `CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES` |
+| None yet | 4 | 8 | `0` |
 | 0 | 1 | 8 | `0` |
-| 1 | 4 | 8 | `CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES` |
-| Any other | 8 | 8 | `CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES` |
+| 1 | 4 | 8 | `0` |
+| Any other | 8 | 8 | `0` |
+
+`flags` never has `CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES`: with it, the plug-in "will then rely upon the note_id to
+distinguish between" overlapping notes (`voice-info.h`), and its MIDI-only port carries no note IDs.
 
 ## Output
 
@@ -60,18 +66,18 @@ last frame.
 | Any other event | Ignored |
 
 The voice count survives reactivation and `reset`. `voice_info.get` reports the new count as soon as it changes, before
-`changed` is called. The plug-in calls `changed` only while it is active, since that is when the host may call `get`. If
-it is deactivated before the main-thread callback runs, it drops the pending `changed`; the host reads the voice info
-afresh after the next `activate`.
+`changed` is called. `changed` is `[main-thread]` with no active requirement, so if the plug-in is deactivated before
+the main-thread callback runs, it still calls `changed` from that callback. A host that wants the new count then reads
+it after the next `activate`.
 
 ## Validation protocol
 
 | Step | Host action | Expected |
 | ---: | --- | --- |
-| 1 | Load and activate; read the voice info | 4 of 8, overlapping |
+| 1 | Load and activate; read the voice info | 4 of 8, flags `0` |
 | 2 | Send MIDI `0xC0 0` at frame 8 of a block (the host must be able to send MIDI) | Left `4` before frame 8, `1` from frame 8 |
 | 3 | Service the main-thread callback while the plug-in is active | The plug-in calls `voice_info.changed` once |
-| 4 | Read the voice info again (or let the host's own `changed` handling do it), then render a block | 1 of 8, no overlap |
+| 4 | Read the voice info again (or let the host's own `changed` handling do it), then render a block | 1 of 8, flags `0` |
 
 The read count on the right channel is a diagnostic, not a pass/fail check: a host that reads the voice info after
 steps 1 and 4 shows it rise each time.

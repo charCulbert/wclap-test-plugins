@@ -35,13 +35,6 @@ protected:
     }
 
     bool activate(double, uint32_t, uint32_t) noexcept override { return true; }
-    // A change not yet reported is dropped: the host may only call
-    // voice_info.get while the plug-in is active, and reads it afresh after
-    // the next activate.
-    void deactivate() noexcept override
-    {
-        changePending.store(false, std::memory_order_release);
-    }
     bool startProcessing() noexcept override { return true; }
 
     clap_process_status process(const clap_process_t* process) noexcept override
@@ -75,10 +68,9 @@ protected:
 
     void onMainThread() noexcept override
     {
-        // voice_info.get is [main-thread & active], so changed is only called
-        // when the host could act on it.
-        if (changePending.exchange(false, std::memory_order_acq_rel) && hostVoiceInfo
-            && isActive())
+        // changed is [main-thread] with no active requirement, so a change
+        // still pending after deactivate is reported too.
+        if (changePending.exchange(false, std::memory_order_acq_rel) && hostVoiceInfo)
             hostVoiceInfo->changed(host);
     }
 
@@ -121,7 +113,9 @@ protected:
         *info = {};
         info->voice_count = voiceCount.load(std::memory_order_relaxed);
         info->voice_capacity = voiceCapacity;
-        info->flags = info->voice_count > 1 ? CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES : 0;
+        // No CLAP_VOICE_INFO_SUPPORTS_OVERLAPPING_NOTES: the plug-in would rely
+        // on note IDs (voice-info.h), and its MIDI-only port carries none.
+        info->flags = 0;
         return true;
     }
 
