@@ -1,0 +1,2 @@
+# Plug-in resources ship byte for byte: no line-ending conversion on Windows checkouts.
+plugins/*/resources/** -text
