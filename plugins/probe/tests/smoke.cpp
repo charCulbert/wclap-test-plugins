@@ -65,11 +65,11 @@ struct EventList
     }
 
     void note(uint32_t time, uint16_t type, int32_t noteId, int16_t key, int16_t channel = 0,
-              int16_t port = 0)
+              int16_t port = 0, double velocity = 1.0)
     {
         AnyEvent event {};
         event.note = { header(time, type, sizeof(clap_event_note_t)), noteId, port, channel,
-                       key, 1.0 };
+                       key, velocity };
         list.push_back(event);
     }
 
@@ -233,10 +233,16 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_params_t* params
     events.mod(12, 0.25);
     events.noteOn(16, 8, 62);
     events.mod(20, 0.5, -1, 60);
-    events.tuning(24, 12.0, -1, 62);
-    events.tuning(28, 32.0, -1);
+    // Note expressions and chokes have no MIDI form (note-ports.h), so the
+    // MIDI run sends no tuning and ends key 62 with a note-off.
+    const bool clap = dialect == Dialect::clap;
+    if (clap) events.tuning(24, 12.0, -1, 62);
+    if (clap) events.tuning(28, 32.0, -1);
     events.noteOff(32, 60);
-    events.note(36, CLAP_EVENT_NOTE_CHOKE, -1, 62);
+    if (clap)
+        events.note(36, CLAP_EVENT_NOTE_CHOKE, -1, 62);
+    else
+        events.noteOff(36, 62);
     events.noteOn(40, 11, 64, 1);
     events.noteOff(44, 64, 1);
     events.noteOn(46, 12, 67, 2);
@@ -257,12 +263,21 @@ void runProtocol(const clap_plugin_t* plugin, const clap_plugin_params_t* params
     expect(block.left, 16, 17, 1.0f, "second note-on click");
     expect(block.left, 17, 20, 0.0f, "left with unmodulated voices");
     expect(block.left, 20, 24, 0.5f, "per-voice modulation on key 60");
-    expect(block.left, 24, 28, 0.59375f, "tuning 12 on key 62");
-    expect(block.left, 28, 32, 1.0f, "wildcard tuning 32 on both voices");
-    expect(block.left, 32, 33, -0.75f, "note-off click on remaining voice sum");
-    expect(block.left, 33, 36, 0.25f, "note-off ended key 60");
-    expect(block.left, 36, 37, -1.0f, "choke click");
-    expect(block.left, 37, 40, 0.0f, "choke ended key 62");
+    if (clap)
+    {
+        expect(block.left, 24, 28, 0.59375f, "tuning 12 on key 62");
+        expect(block.left, 28, 32, 1.0f, "wildcard tuning 32 on both voices");
+        expect(block.left, 32, 33, -0.75f, "note-off click on remaining voice sum");
+        expect(block.left, 33, 36, 0.25f, "note-off ended key 60");
+    }
+    else
+    {
+        expect(block.left, 24, 32, 0.5f, "no tuning in the MIDI run");
+        expect(block.left, 32, 33, -1.0f, "note-off click");
+        expect(block.left, 33, 36, 0.0f, "note-off ended key 60");
+    }
+    expect(block.left, 36, 37, -1.0f, "choke or note-off click");
+    expect(block.left, 37, 40, 0.0f, "key 62 ended");
     expect(block.left, 40, 41, 1.0f, "channel 1 note-on click");
     expect(block.left, 41, 44, 0.0f, "left after channel 1 note-on");
     expect(block.left, 44, 45, -1.0f, "channel 1 note-off click");
@@ -332,6 +347,31 @@ void runVoiceChecks(const clap_plugin_t* plugin)
     expectEnds(block.out, ends, "no free voice");
     expect(block.left, 64, 65, 1.0f, "note-on with no free voice still clicks");
 
+    // events.h: a CLAP NOTE_ON with velocity 0 is a note-on. In MIDI, 0x9n with
+    // velocity 0 is a note-off.
+    EventList velocity;
+    velocity.note(0, CLAP_EVENT_NOTE_ON, 5, 60, 0, 0, 0.0);
+    velocity.mod(1, 0.5, 5);
+    velocity.midi(4, 0x90, 60, 0);
+    require(block.run(plugin, velocity, 2 * blockSize) == CLAP_PROCESS_CONTINUE,
+            "status mismatch");
+    expect(block.left, 0, 1, 1.0f, "CLAP note-on with velocity 0 clicks as a note-on");
+    expect(block.left, 1, 4, 0.5f, "CLAP note-on with velocity 0 starts a voice");
+    expect(block.left, 4, 5, -1.0f, "MIDI note-on with velocity 0 clicks as a note-off");
+    expect(block.left, 5, blockSize, 0.0f, "MIDI note-on with velocity 0 ends the voice");
+    expectEnds(block.out, { { 4, 5, 0, 60 } }, "velocity 0");
+
+    // A note-on with port, channel or key -1 is invalid: no click, no voice.
+    EventList invalid;
+    invalid.note(0, CLAP_EVENT_NOTE_ON, 1, 60, 0, -1);
+    invalid.note(1, CLAP_EVENT_NOTE_ON, 2, 60, -1, 0);
+    invalid.note(2, CLAP_EVENT_NOTE_ON, 3, -1, 0, 0);
+    invalid.mod(3, 0.5);
+    require(block.run(plugin, invalid, 3 * blockSize) == CLAP_PROCESS_CONTINUE,
+            "status mismatch");
+    expect(block.left, 0, blockSize, 0.0f, "invalid note-on was not ignored");
+    require(block.out.ends.empty(), "NOTE_END sent for an invalid note-on");
+
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
 }
@@ -369,16 +409,20 @@ void runSmoke()
                 && notePorts->count(plugin, false) == 0
                 && notePorts->get(plugin, 0, true, &noteInfo)
                 && noteInfo.supported_dialects
-                    == (CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI),
+                    == (CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI)
+                && noteInfo.preferred_dialect == CLAP_NOTE_DIALECT_CLAP,
             "note port mismatch");
     clap_param_info_t paramInfo {};
     require(params && params->count(plugin) == 1 && params->get_info(plugin, 0, &paramInfo)
                 && paramInfo.id == levelParamId && paramInfo.min_value == 0.0
                 && paramInfo.max_value == 1.0 && paramInfo.default_value == 0.0,
             "parameter info mismatch");
-    const auto modFlags = CLAP_PARAM_IS_MODULATABLE | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID
-        | CLAP_PARAM_IS_MODULATABLE_PER_KEY | CLAP_PARAM_REQUIRES_PROCESS;
-    require((paramInfo.flags & modFlags) == modFlags, "parameter flags mismatch");
+    // Exactly the README's flags: none of the per-voice automation flags.
+    const auto flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE
+        | CLAP_PARAM_IS_MODULATABLE_PER_NOTE_ID | CLAP_PARAM_IS_MODULATABLE_PER_KEY
+        | CLAP_PARAM_IS_MODULATABLE_PER_CHANNEL | CLAP_PARAM_IS_MODULATABLE_PER_PORT
+        | CLAP_PARAM_REQUIRES_PROCESS;
+    require(paramInfo.flags == flags, "parameter flags mismatch");
 
     // The note port takes both dialects, so the host may send either.
     runProtocol(plugin, params, Dialect::clap);
