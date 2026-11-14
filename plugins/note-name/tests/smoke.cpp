@@ -137,7 +137,8 @@ void runSmoke()
     require(notePorts && notePorts->count(plugin, true) == 1
                 && notePorts->count(plugin, false) == 0
                 && notePorts->get(plugin, 0, true, &noteInfo)
-                && (noteInfo.supported_dialects & CLAP_NOTE_DIALECT_MIDI),
+                && noteInfo.supported_dialects == CLAP_NOTE_DIALECT_MIDI
+                && noteInfo.preferred_dialect == CLAP_NOTE_DIALECT_MIDI,
             "note port mismatch");
     require(noteName != nullptr, "no note-name extension");
 
@@ -149,13 +150,13 @@ void runSmoke()
     require(plugin->start_processing(plugin), "start processing failed");
 
     EventList events;
-    events.midi(8, 0xc0, 0);  // already kit 0: no change
-    events.midi(10, 0xc3, 5); // kit 1
-    events.midi(20, 0xc0, 7); // still kit 1
+    events.midi(4, 0xc0, 0);  // already kit 0: no change
+    events.midi(8, 0xc0, 1);  // kit 1, as in the README
+    events.midi(20, 0xc3, 5); // any channel, still kit 1
     Block block;
     block.run(plugin, events);
-    expect(block.left, 0, 10, 0.0f, "kit 0");
-    expect(block.left, 10, blockSize, 1.0f, "kit 1 from the program change");
+    expect(block.left, 0, 8, 0.0f, "kit 0");
+    expect(block.left, 8, blockSize, 1.0f, "kit 1 from the program change");
     expect(block.right, 0, blockSize, 1.0f, "one read so far");
     require(callbackRequests == 1, "request_callback count is " + std::to_string(callbackRequests));
 

@@ -1,6 +1,6 @@
 # note-name
 
-A GUI-free instrument with one stereo output and one note input. It names four drum keys and gives one name to every
+A GUI-free instrument with one stereo output and one MIDI note input. It names four drum keys and gives one name to every
 other key. A MIDI program change switches it to a second kit that renames one key, after which it calls
 `note_name.changed` on the host. The output shows the kit and how many times the host has read the names. Native CLAP
 and WCLAP compile the same [`Plugin.cpp`](Plugin.cpp) and [`Entry.cpp`](Entry.cpp); the sources contain no
@@ -17,8 +17,8 @@ The host reads a plug-in's note names, including a name for any key (`-1`), and 
 
 **Loads** the plug-in and shows its note names. After a program change it services the plug-in's
 `request_callback`, receives `note_name.changed` from `on_main_thread`, and reads the names again: key 38 is then
-`Rim`, and the right channel goes up by one. A host that caches the names and ignores `changed` keeps showing `Snare`,
-and its right channel stays the same. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, both
+`Rim`. A host that caches the names and ignores `changed` keeps showing `Snare`. The protocol's program change needs a
+host that can send MIDI to the plug-in. [`tests/smoke.cpp`](tests/smoke.cpp) checks the plug-in's side (ports, both
 kits' names, the kit and read count in the output, one `request_callback` and one `changed` per kit change) on the
 native build under `ctest`.
 
@@ -27,7 +27,9 @@ native build under `ctest`.
 | Port | Channels | Use |
 | --- | --- | --- |
 | Audio output 0, `Kit / note name reads` | 2 | Left: kit. Right: number of reads. |
-| Note input 0, `Named notes` | | CLAP and MIDI dialects; CLAP preferred |
+| Note input 0, `Named notes` | | MIDI dialect only |
+
+The plug-in plays no notes; the note input exists for the program change, which only MIDI has.
 
 There is no audio input and there are no parameters. The plug-in returns `CLAP_PROCESS_CONTINUE` from every block.
 
@@ -50,8 +52,10 @@ left  = kit (0 or 1)
 right = number of note_name.get calls for index 0 since the plug-in was created
 ```
 
-A host reading the list starts at index 0, so the right channel counts the host's reads. Both channels are written on
-every frame. The plug-in starts on kit 0.
+The right channel is a heuristic: a host that reads the whole list from the start makes one index-0 call per read. CLAP
+does not fix the order or the subset a host reads ([`ext/note-name.h`](../../external/clap/include/clap/ext/note-name.h)),
+so a host that reads in another order, or only some names, can show a different count and still be correct. Both
+channels are written on every frame. The plug-in starts on kit 0.
 
 | Event | Effect |
 | --- | --- |
@@ -65,8 +69,11 @@ and `reset`. Note names change as soon as the kit does, before `changed` is call
 
 | Step | Host action | Expected |
 | ---: | --- | --- |
-| 1 | Load and activate; read the note names | The kit 0 names; right channel `n >= 1` |
-| 2 | Send MIDI `0xC0 1` at frame 8 of a block | Left `0` before frame 8, `1` from frame 8 |
+| 1 | Load and activate; read the note names | The kit 0 names |
+| 2 | Send MIDI `0xC0 1` at frame 8 of a block (the host must be able to send MIDI) | Left `0` before frame 8, `1` from frame 8 |
 | 3 | Service the main-thread callback | The plug-in calls `note_name.changed` once |
-| 4 | Read the names again (or let the host's own `changed` handling do it), then render a block | Key 38 reads `Rim`; right channel `n + 1` or more |
+| 4 | Read the names again (or let the host's own `changed` handling do it), then render a block | Key 38 reads `Rim` |
 | 5 | Send MIDI `0xC0 0` | Left `0`, another `changed`, key 38 reads `Snare` |
+
+The read count on the right channel is a diagnostic, not a pass/fail check: a host that reads the list from index 0
+shows it rise after steps 1 and 4.

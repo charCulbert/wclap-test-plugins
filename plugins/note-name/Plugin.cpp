@@ -100,16 +100,18 @@ protected:
         if (!isInput || index != 0 || !info) return false;
         *info = {};
         info->id = 0;
-        info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
-        info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
+        // Program change exists only in MIDI, and the plug-in plays no notes.
+        info->supported_dialects = CLAP_NOTE_DIALECT_MIDI;
+        info->preferred_dialect = CLAP_NOTE_DIALECT_MIDI;
         std::snprintf(info->name, sizeof(info->name), "Named notes");
         return true;
     }
 
     bool implementsNoteName() const noexcept override { return true; }
     uint32_t noteNameCount() noexcept override { return keys.size() + 1; }
-    // A read of the list starts at index 0, so calls for index 0 count the
-    // host's reads. (count() is not counted: clap-helpers calls it from get().)
+    // Calls for index 0 stand in for the host's reads of the list: a host that
+    // reads the whole list starts there. (count() is not counted: clap-helpers
+    // calls it from get().)
     bool noteNameGet(uint32_t index, clap_note_name_t* noteName) noexcept override
     {
         if (!noteName || index > keys.size()) return false;
