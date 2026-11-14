@@ -8,6 +8,7 @@ identical code.
 
 | Plug-in | Proves |
 | --- | --- |
+| [`audio-ports-activation`](plugins/audio-ports-activation/README.md) | The host activates and deactivates a plug-in's audio ports through `audio_ports_activation` only while the plug-in is inactive, keeps passing buffers for deactivated ports, and reads their silence and `constant_mask`. |
 | [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface in CLAP order (`create`, `get_size`, `set_parent`, `show`) and serves the plug-in's multi-file resources to it. |
 | [`log`](plugins/log/README.md) | The host takes `log` calls from the audio thread and the main thread, at every severity, with UTF-8 text, and carries on running the plug-in. |
 | [`midi-echo`](plugins/midi-echo/README.md) | The host sends notes and raw MIDI to a plug-in in the dialect its note input asks for (MIDI or MIDI 2), passes sysex through, sets the event flags it means to, and receives the note and MIDI events a plug-in sends out. |
