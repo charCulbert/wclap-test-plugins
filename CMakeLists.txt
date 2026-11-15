@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(wclap-test-plugins VERSION 0.3.2 LANGUAGES C CXX)
+project(wclap-test-plugins VERSION 0.3.3 LANGUAGES C CXX)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^wasm")
     set(ANY_WASM_TOOLCHAIN TRUE)

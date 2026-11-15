@@ -9,6 +9,7 @@ identical code.
 | Plug-in | Proves |
 | --- | --- |
 | [`audio-ports-activation`](plugins/audio-ports-activation/README.md) | The host activates and deactivates a plug-in's audio ports through `audio_ports_activation` only while the plug-in is inactive, keeps passing buffers for deactivated ports, and reads their silence and `constant_mask`. |
+| [`crash`](plugins/crash/README.md) | How the host contains a plug-in that traps inside `process()`: it keeps running, stops calling the dead instance, and either passes the input through, when the plug-in's input and output ports match, or goes silent. |
 | [`gui-lifecycle`](plugins/gui-lifecycle/README.md) | The host opens an embedded WebView interface through `clap.webview/3`, serves the plug-in's multi-file resources to it, and carries messages between the page and the plug-in. |
 | [`log`](plugins/log/README.md) | The host takes `log` calls from the audio thread and the main thread, at every severity, with UTF-8 text, and carries on running the plug-in. |
 | [`midi-echo`](plugins/midi-echo/README.md) | Which dialect the host sends notes and raw MIDI in when a plug-in's note input lists only one (MIDI, MIDI 2 or CLAP), that it passes sysex through and sets the event flags it means to, and that it receives the note and MIDI events a plug-in sends out. |
@@ -20,6 +21,7 @@ identical code.
 | [`remote-controls`](plugins/remote-controls/README.md) | The host reads a plug-in's remote-control pages, maps each control to the parameter the page names, and reads the pages again when the plug-in calls `remote_controls.changed`. |
 | [`render`](plugins/render/README.md) | Whether the host calls `render.set`: with `CLAP_RENDER_OFFLINE` before it renders faster or slower than real time, and with `CLAP_RENDER_REALTIME` when it goes back to playing in real time. |
 | [`state-context`](plugins/state-context/README.md) | Which call and context the host uses to save and load a plug-in's state: `state_context` with `CLAP_STATE_CONTEXT_FOR_PRESET` for a preset, `CLAP_STATE_CONTEXT_FOR_DUPLICATE` when it copies the plug-in, and `CLAP_STATE_CONTEXT_FOR_PROJECT` for a project, or plain `state`. |
+| [`transport`](plugins/transport/README.md) | The host passes its transport (position, tempo, bar, time signature, play and loop state) in each block's `transport`, and any change inside a block as a `CLAP_EVENT_TRANSPORT` event on the frame it happens, with the values it means. |
 | [`voice-info`](plugins/voice-info/README.md) | The host reads a plug-in's voice info while it is active and reads it again when the plug-in calls `voice_info.changed`. |
 
 Each plug-in's README says what a correct host does with it. Every plug-in is meant to be loaded. Only what the CLAP
@@ -30,9 +32,13 @@ choice shows. process-lifecycle and audio-ports-activation also say when a host 
 No plug-in ends the host's process on a call it does not expect. A call made in the wrong state or with an unknown ID
 or index is refused (the plug-in returns `false`, `0` or nothing) and reported through the host's `clap.log`, if it
 has one, at `CLAP_LOG_HOST_MISBEHAVING`. Each README names the refusals that matter for its test.
+The one deliberate exception is `crash`: setting its `Crash` parameter to `1` traps inside `process()`, which ends a
+native host's process. Load its native builds only to check behaviour before the crash, and keep it out of parameter
+fuzzing.
 
 Plug-in IDs are `com.charlieculbert.wclap-test-plugins.<name>`. `midi-echo` also holds two more plug-ins,
 `com.charlieculbert.wclap-test-plugins.midi-echo.midi2` and `com.charlieculbert.wclap-test-plugins.midi-echo.clap`.
+`crash` also holds `com.charlieculbert.wclap-test-plugins.crash.instrument`.
 
 ## Download
 
